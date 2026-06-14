@@ -1,0 +1,200 @@
+const form = document.querySelector("#analyse-form");
+const input = document.querySelector("#event-input");
+const statusEl = document.querySelector("#status");
+const summaryEl = document.querySelector("#summary");
+const resultsEl = document.querySelector("#results");
+const sessionsEl = document.querySelector("#sessions");
+const submitButton = form.querySelector("button");
+
+const formatNumber = new Intl.NumberFormat("en-AU");
+const formatDate = new Intl.DateTimeFormat("en-AU", {
+  weekday: "short",
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+});
+const formatTime = new Intl.DateTimeFormat("en-AU", {
+  hour: "numeric",
+  minute: "2-digit",
+});
+const formatShortDate = new Intl.DateTimeFormat("en-AU", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+});
+
+function setStatus(message, isError = false) {
+  statusEl.textContent = message;
+  statusEl.classList.toggle("error", isError);
+}
+
+function percent(value) {
+  return `${value.toFixed(1)}%`;
+}
+
+function progressWidth(value) {
+  if (!value) return 0;
+  return Math.min(Math.max(value, 2), 100);
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function setText(id, value) {
+  document.querySelector(id).textContent = value;
+}
+
+function formatDateRange(range) {
+  if (!range || !range.start) return "Dates not supplied";
+  const start = new Date(range.start);
+  const end = range.end ? new Date(range.end) : start;
+  if (start.toDateString() === end.toDateString()) {
+    return formatShortDate.format(start);
+  }
+  return `${formatShortDate.format(start)} to ${formatShortDate.format(end)}`;
+}
+
+function render(data) {
+  const summary = data.summary;
+  const image = document.querySelector("#event-image");
+  image.src = data.imageUrl || "";
+  image.alt = data.eventName || "Event image";
+
+  setText("#event-name", data.eventName || `Event ${data.eventId}`);
+  setText("#event-location", data.venue || data.location || "Location not supplied");
+  setText("#event-dates", formatDateRange(data.dateRange));
+  setText("#overall-percent", percent(summary.effectiveSoldPercent));
+  document.querySelector("#overall-ring").style.setProperty("--sold", `${Math.min(summary.effectiveSoldPercent, 100)}%`);
+  setText("#metric-performances", formatNumber.format(summary.performances));
+  setText("#metric-total", formatNumber.format(summary.totalSeats));
+  setText("#metric-sold", formatNumber.format(summary.ticketsSold));
+  setText("#metric-unavailable", formatNumber.format(summary.unavailableSeats));
+  setText("#metric-left", formatNumber.format(summary.availableSeats));
+
+  sessionsEl.innerHTML = "";
+  data.sessions.forEach((session, index) => {
+    const when = session.dateTime ? new Date(session.dateTime) : null;
+    const row = document.createElement("tr");
+    row.className = "session-row";
+    row.dataset.detail = `detail-${index}`;
+    row.innerHTML = `
+      <td><button class="expand-button" type="button" aria-expanded="false" aria-controls="detail-${index}">+</button></td>
+      <td data-label="Date">${when ? formatDate.format(when) : ""}</td>
+      <td data-label="Time">${when ? formatTime.format(when) : ""}</td>
+      <td data-label="Sold">${formatNumber.format(session.ticketsSold)} / ${formatNumber.format(session.totalSeats)}</td>
+      <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
+      <td data-label="Available">${formatNumber.format(session.availableSeats)}</td>
+      <td data-label="% sold">
+        <div class="bar">
+          <span>${percent(session.effectiveSoldPercent)}</span>
+          <span class="track"><span class="fill" style="width: ${progressWidth(session.effectiveSoldPercent)}%"></span></span>
+        </div>
+      </td>
+    `;
+    sessionsEl.appendChild(row);
+
+    const detailRow = document.createElement("tr");
+    detailRow.id = `detail-${index}`;
+    detailRow.className = "detail-row";
+    detailRow.hidden = true;
+    detailRow.innerHTML = `
+      <td colspan="7">
+        <div class="detail-panel">
+          <div class="detail-summary">
+            <strong>Seat status detail</strong>
+            <span>${formatNumber.format(session.ticketsSold)} sold</span>
+            <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sold %</span>
+            <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
+            <span>${formatNumber.format(session.availableSeats)} available to buy</span>
+          </div>
+          ${renderBreakdown(session.breakdown)}
+        </div>
+      </td>
+    `;
+    sessionsEl.appendChild(detailRow);
+  });
+
+  summaryEl.hidden = false;
+  resultsEl.hidden = false;
+}
+
+function renderBreakdown(breakdown = []) {
+  if (!breakdown.length) {
+    return `<p class="empty-detail">No detailed seat-map codes were returned for this session.</p>`;
+  }
+
+  const rows = breakdown
+    .map((item) => {
+      const excluded = item.excludedFromCapacity
+        ? `${formatNumber.format(item.excludedFromCapacity)} excluded from capacity`
+        : "";
+      const included = item.countsTowardSoldPercent ? "Yes" : "No";
+      return `
+        <tr>
+          <td data-label="Code"><span class="code-pill">${escapeHtml(item.code)}</span></td>
+          <td data-label="Meaning">${escapeHtml(item.label)}</td>
+          <td data-label="Seats" class="numeric">${formatNumber.format(item.count)}</td>
+          <td data-label="In sold %">${included}</td>
+          <td data-label="Capacity note">${excluded}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  return `
+    <table class="breakdown-table">
+      <thead>
+        <tr>
+          <th>Code</th>
+          <th>Meaning</th>
+          <th>Seats</th>
+          <th>In sold %</th>
+          <th>Capacity note</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+sessionsEl.addEventListener("click", (event) => {
+  const row = event.target.closest(".session-row");
+  if (!row) return;
+
+  const detailRow = document.querySelector(`#${row.dataset.detail}`);
+  const button = row.querySelector(".expand-button");
+  const isOpen = !detailRow.hidden;
+  detailRow.hidden = isOpen;
+  button.textContent = isOpen ? "+" : "-";
+  button.setAttribute("aria-expanded", String(!isOpen));
+});
+
+async function analyse(event) {
+  event.preventDefault();
+  submitButton.disabled = true;
+  summaryEl.hidden = true;
+  resultsEl.hidden = true;
+  setStatus("Analysing TicketSearch sessions...");
+
+  try {
+    const response = await fetch(`/api/analyse?input=${encodeURIComponent(input.value)}`);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || "Analysis failed.");
+    }
+    render(data);
+    setStatus("Analysis complete. Sold % includes actual sold seats and mapped sold-equivalent hold codes.");
+  } catch (error) {
+    setStatus(error.message, true);
+  } finally {
+    submitButton.disabled = false;
+  }
+}
+
+form.addEventListener("submit", analyse);
