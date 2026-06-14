@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Theatre Seat Sales</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="toolbar">
+        <div>
+          <h1>Theatre Seat Sales</h1>
+          <p>Analyse TicketSearch performances by remaining purchase availability.</p>
+        </div>
+        <form id="analyse-form" class="search">
+          <input id="event-input" name="event" value="https://ccclaycock.sales.ticketsearch.com/sales/salesevent/162924" autocomplete="off">
+          <button type="submit">Analyse</button>
+        </form>
+      </section>
+
+      <section id="status" class="status">Enter a TicketSearch event URL or event number.</section>
+
+      <section id="summary" class="summary" hidden>
+        <div class="show-hero">
+          <img id="event-image" alt="">
+        </div>
+        <div class="show-header">
+          <div class="show-copy">
+            <h2 id="event-name"></h2>
+            <div class="show-meta">
+              <span id="event-location"></span>
+              <span id="event-dates"></span>
+            </div>
+          </div>
+          <div class="overall" id="overall-ring">
+            <div class="ring-inner">
+              <span id="overall-percent">0%</span>
+              <small>sold</small>
+            </div>
+          </div>
+        </div>
+        <div class="metrics">
+          <div><span id="metric-performances">0</span><small>Performances</small></div>
+          <div><span id="metric-total">0</span><small>Total seats</small></div>
+          <div><span id="metric-sold">0</span><small>Sold</small></div>
+          <div><span id="metric-unavailable">0</span><small>Unavailable</small></div>
+          <div><span id="metric-left">0</span><small>Left to buy</small></div>
+        </div>
+      </section>
+
+      <section id="results" class="table-wrap" hidden>
+        <table>
+          <thead>
+            <tr>
+              <th></th>
+              <th>Date</th>
+              <th>Time</th>
+              <th>Sold</th>
+              <th>Unavailable</th>
+              <th>Available</th>
+              <th>% sold</th>
+            </tr>
+          </thead>
+          <tbody id="sessions"></tbody>
+        </table>
+      </section>
+    </main>
+    <script src="/app.js"></script>
+  </body>
+</html>
