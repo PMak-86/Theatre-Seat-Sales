@@ -229,8 +229,65 @@ small {
   font-weight: 800;
 }
 
+.history {
+  margin-top: 16px;
+  padding: 24px 28px 28px;
+  border: 1px solid #dfe5ea;
+  border-radius: 4px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 33, 55, 0.08);
+}
+
+.history-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.45fr);
+  gap: 22px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+h3 {
+  margin: 0;
+  color: var(--navy);
+  font-size: 24px;
+}
+
+.history-header p {
+  margin-top: 6px;
+  color: #5d6972;
+}
+
+.uplift-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid var(--line);
+}
+
+.uplift-grid div {
+  padding: 12px 14px;
+}
+
+.uplift-grid div + div {
+  border-left: 1px solid var(--line);
+}
+
+.uplift-grid span {
+  display: block;
+  color: var(--navy);
+  font-size: 22px;
+  font-weight: 800;
+}
+
+#history-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+}
+
 .table-wrap {
-  margin-top: 0;
+  margin-top: 16px;
   overflow-x: auto;
   background: #fff;
   border: 1px solid #dfe5ea;
@@ -514,6 +571,24 @@ td.numeric {
     border-right: 0;
     border-bottom: 1px solid #e5ecef;
     padding: 14px 16px;
+  }
+
+  .history {
+    padding: 18px 14px;
+  }
+
+  .history-header {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .uplift-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .uplift-grid div + div {
+    border-left: 0;
+    border-top: 1px solid var(--line);
   }
 
   .metrics div:nth-child(odd) {
