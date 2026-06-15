@@ -1,0 +1,15 @@
+name: Daily sales snapshot
+
+on:
+  schedule:
+    - cron: "15 18 * * *"
+  workflow_dispatch:
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Capture tracked event snapshots
+        run: |
+          curl --fail --show-error --silent \
+            "${{ secrets.RENDER_APP_URL }}/api/snapshot/daily?secret=${{ secrets.SNAPSHOT_SECRET }}"
