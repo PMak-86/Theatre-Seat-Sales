@@ -359,12 +359,40 @@ h3 {
   font-weight: 800;
 }
 
+.history-chart-wrap {
+  position: relative;
+}
+
 #history-chart {
   display: block;
   width: 100%;
   height: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
+}
+
+.history-tooltip {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  gap: 3px;
+  min-width: 178px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #071f3d;
+  color: #fff;
+  box-shadow: 0 12px 26px rgba(15, 33, 55, 0.22);
+  pointer-events: none;
+}
+
+.history-tooltip strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.history-tooltip span {
+  color: #dbe5ec;
+  font-size: 13px;
 }
 
 .table-wrap {
