@@ -43,7 +43,22 @@ If you create a Web Service manually instead of using Blueprint, use:
 3. Test a TicketSearch event URL in the input box.
 4. If the first request is slow, wait and retry. Free services can take a moment to wake up.
 
-## 4. Future updates
+## 4. Supabase history setup
+
+Add these environment variables in Render:
+
+- `SUPABASE_URL`: `https://esmgxpncusfkinygdpja.supabase.co`
+- `SUPABASE_SERVICE_ROLE_KEY`: copy this from Supabase project settings. Use the service role key, not the anon key.
+- `SNAPSHOT_SECRET`: create any long random secret string.
+
+Add these repository secrets in GitHub:
+
+- `RENDER_APP_URL`: your Render app URL, for example `https://theatre-seat-sales.onrender.com`
+- `SNAPSHOT_SECRET`: the same value used in Render.
+
+The GitHub Actions workflow in `.github/workflows/daily-snapshot.yml` calls `/api/snapshot/daily` once per day.
+
+## 5. Future updates
 
 After editing the site locally:
 
