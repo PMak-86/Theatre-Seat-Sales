@@ -55,6 +55,26 @@ h1 {
   gap: 10px;
 }
 
+.bookmarks {
+  grid-column: 2;
+  padding: 14px;
+  border: 1px solid #dfe5ea;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.bookmark-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.bookmark-header strong {
+  color: var(--navy);
+}
+
 input,
 button {
   min-height: 44px;
@@ -81,6 +101,52 @@ button {
 button:disabled {
   cursor: wait;
   opacity: 0.7;
+}
+
+.secondary-button {
+  min-height: 34px;
+  padding: 0 12px;
+  background: #e7eef2;
+  color: var(--navy);
+  font-size: 13px;
+}
+
+.bookmark-list {
+  display: grid;
+  gap: 8px;
+}
+
+.bookmark-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.bookmark-load,
+.bookmark-remove {
+  min-height: 36px;
+  padding: 0 11px;
+  font-size: 14px;
+}
+
+.bookmark-load {
+  overflow: hidden;
+  background: #f5f8fa;
+  color: #102238;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bookmark-remove {
+  background: transparent;
+  color: #8b3a32;
+  border: 1px solid #ead0cc;
+}
+
+.empty-bookmarks {
+  color: #66737b;
+  font-size: 14px;
 }
 
 .status {
@@ -497,6 +563,20 @@ td.numeric {
   .search,
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .bookmarks {
+    grid-column: 1;
+    padding: 12px;
+  }
+
+  .bookmark-header,
+  .bookmark-item {
+    grid-template-columns: 1fr;
+  }
+
+  .bookmark-header {
+    display: grid;
   }
 
   .toolbar {
