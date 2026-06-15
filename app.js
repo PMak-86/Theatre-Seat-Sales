@@ -142,6 +142,16 @@ function signedNumber(value) {
   return `${prefix}${formatNumber.format(value)}`;
 }
 
+function dailyDeltaLabel(value) {
+  if (value === null || value === undefined) return "-";
+  return signedNumber(value);
+}
+
+function baselineLabel(value) {
+  if (!value) return "No daily baseline yet";
+  return `Compared with ${formatSnapshotDateTime.format(new Date(value))}`;
+}
+
 function formatDateRange(range) {
   if (!range || !range.start) return "Dates not supplied";
   const start = new Date(range.start);
@@ -188,6 +198,9 @@ function render(data) {
       <td data-label="Sold">${formatNumber.format(session.ticketsSold)} / ${formatNumber.format(session.totalSeats)}</td>
       <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
       <td data-label="Available">${formatNumber.format(session.availableSeats)}</td>
+      <td data-label="24h sales" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
+        <span class="delta-value">${dailyDeltaLabel(session.salesSinceDailySnapshot)}</span>
+      </td>
       <td data-label="% sold">
         <div class="bar">
           <span>${percent(session.effectiveSoldPercent)}</span>
@@ -202,7 +215,7 @@ function render(data) {
     detailRow.className = "detail-row";
     detailRow.hidden = true;
     detailRow.innerHTML = `
-      <td colspan="7">
+      <td colspan="8">
         <div class="detail-panel">
           <div class="detail-summary">
             <strong>Seat status detail</strong>
@@ -210,6 +223,7 @@ function render(data) {
             <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sold %</span>
             <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
             <span>${formatNumber.format(session.availableSeats)} available to buy</span>
+            <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} since daily snapshot</span>
           </div>
           ${renderBreakdown(session.breakdown)}
         </div>
@@ -374,7 +388,7 @@ function handleHistoryPointer(event) {
   const rect = canvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
   const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
-  const hitRadius = 18;
+  const hitRadius = event.pointerType === "touch" ? 30 : 18;
   const nearest = chartPoints
     .map((point) => ({
       point,
@@ -467,9 +481,11 @@ bookmarkListEl.addEventListener("click", (event) => {
 });
 
 saveBookmarkButton.addEventListener("click", saveCurrentBookmark);
-document.querySelector("#history-chart").addEventListener("pointermove", handleHistoryPointer);
-document.querySelector("#history-chart").addEventListener("pointerleave", () => {
-  document.querySelector("#history-chart").style.cursor = "default";
+const historyChart = document.querySelector("#history-chart");
+historyChart.addEventListener("pointermove", handleHistoryPointer);
+historyChart.addEventListener("pointerdown", handleHistoryPointer);
+historyChart.addEventListener("pointerleave", () => {
+  historyChart.style.cursor = "default";
   hideHistoryTooltip();
 });
 
