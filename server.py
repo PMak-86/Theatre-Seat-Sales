@@ -348,6 +348,7 @@ def analyse_session(
         available = int(schedule.get("ScheduleAvailable") or 0)
         total = int((schedule.get("ScheduleCapacity") or 0) or available)
         tickets_sold = max(total - available, 0)
+        explicit_sold = 0
         effective_sold = tickets_sold
         unavailable_other = 0
         breakdown_rows = []
@@ -485,7 +486,12 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
         "unavailable_percent": summary["unavailablePercent"],
         "source": source,
     }
-    snapshot_rows = supabase_request("event_snapshots", "POST", [snapshot_payload], "return=representation")
+    snapshot_rows = supabase_request(
+        "event_snapshots",
+        "POST",
+        [snapshot_payload],
+        "return=representation",
+    )
     snapshot = snapshot_rows[0]
     performance_payload = [
         {
@@ -509,7 +515,69 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
     if performance_payload:
         supabase_request("performance_snapshots", "POST", performance_payload)
 
-    return {"trackedEventId": tracked["id"], "snapshotId": snapshot["id"], "capturedAt": snapshot["captured_at"]}
+    return {
+        "trackedEventId": tracked["id"],
+        "snapshotId": snapshot["id"],
+        "capturedAt": snapshot["captured_at"],
+    }
+
+
+def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
+    for session in data.get("sessions", []):
+        session["salesSinceDailySnapshot"] = None
+        session["dailySnapshotCapturedAt"] = None
+
+    summary = data.get("summary") or {}
+    summary["salesSinceDailySnapshot"] = None
+    summary["dailySnapshotCapturedAt"] = None
+
+    if not storage_enabled():
+        return
+
+    tracked = supabase_request(
+        "tracked_events"
+        f"?event_url=eq.{quote(data['eventUrl'], safe='')}"
+        "&select=id"
+        "&order=last_seen_at.desc"
+        "&limit=1"
+    )
+    if not tracked:
+        return
+
+    snapshots = supabase_request(
+        "event_snapshots"
+        f"?tracked_event_id=eq.{tracked[0]['id']}"
+        "&source=eq.daily"
+        "&select=id,captured_at,effective_sold"
+        "&order=captured_at.desc"
+        "&limit=1"
+    )
+    if not snapshots:
+        return
+
+    baseline = snapshots[0]
+    performances = supabase_request(
+        "performance_snapshots"
+        f"?event_snapshot_id=eq.{baseline['id']}"
+        "&select=schedule_id,effective_sold"
+    )
+    baseline_by_schedule = {int(item["schedule_id"]): int(item["effective_sold"] or 0) for item in performances}
+    total_delta = 0
+    matched = False
+
+    for session in data.get("sessions", []):
+        baseline_sold = baseline_by_schedule.get(int(session["scheduleId"]))
+        if baseline_sold is None:
+            continue
+        delta = int(session["effectiveSoldSeats"]) - baseline_sold
+        session["salesSinceDailySnapshot"] = delta
+        session["dailySnapshotCapturedAt"] = baseline["captured_at"]
+        total_delta += delta
+        matched = True
+
+    if matched:
+        summary["salesSinceDailySnapshot"] = total_delta
+        summary["dailySnapshotCapturedAt"] = baseline["captured_at"]
 
 
 def tracked_events() -> list[dict[str, Any]]:
@@ -527,10 +595,57 @@ def run_daily_snapshots() -> dict[str, Any]:
         try:
             data = analyse_event(event["event_url"])
             stored = store_snapshot(data, "daily")
-            results.append({"eventUrl": event["event_url"], "eventName": data.get("eventName"), "ok": True, "snapshot": stored})
+            results.append({
+                "eventUrl": event["event_url"],
+                "eventName": data.get("eventName"),
+                "ok": True,
+                "snapshot": stored,
+            })
         except Exception as exc:
-            results.append({"eventUrl": event["event_url"], "eventName": event.get("event_name"), "ok": False, "error": str(exc)})
+            results.append({
+                "eventUrl": event["event_url"],
+                "eventName": event.get("event_name"),
+                "ok": False,
+                "error": str(exc),
+            })
     return {"trackedEvents": len(events), "results": results}
+
+
+def event_history(event_id: int) -> dict[str, Any]:
+    if not storage_enabled():
+        raise StorageError("Supabase is not configured.")
+
+    tracked = supabase_request(
+        "tracked_events"
+        f"?event_id=eq.{event_id}"
+        "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
+        "&order=last_seen_at.desc"
+        "&limit=1"
+    )
+    if not tracked:
+        raise StorageError("No snapshot history has been collected for this event yet.")
+
+    tracked_event = tracked[0]
+    snapshots = supabase_request(
+        "event_snapshots"
+        f"?tracked_event_id=eq.{tracked_event['id']}"
+        "&select=captured_at,total_seats,actual_sold,effective_sold,unavailable,available,"
+        "actual_sold_percent,effective_sold_percent,unavailable_percent,source"
+        "&order=captured_at.asc"
+    )
+    performances = supabase_request(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked_event['id']}"
+        "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
+        "unavailable,available,effective_sold_percent,event_snapshots(captured_at)"
+        "&order=show_datetime.asc"
+    )
+    return {
+        "event": tracked_event,
+        "snapshots": snapshots,
+        "performances": performances,
+        "uplift": uplift_metrics(snapshots),
+    }
 
 
 def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
@@ -567,42 +682,15 @@ def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
             "actualSoldChange": actual_change,
             "effectiveSoldChange": effective_change,
             "effectiveSoldPercentPointChange": percent_point_change,
-            "effectiveSoldRelativeChange": effective_change / previous["effective_sold"] * 100 if previous["effective_sold"] else None,
+            "effectiveSoldRelativeChange": (
+                effective_change / previous["effective_sold"] * 100 if previous["effective_sold"] else None
+            ),
         }
 
-    return {"day": compare(closest_before(1)), "week": compare(closest_before(7))}
-
-
-def event_history(event_id: int) -> dict[str, Any]:
-    if not storage_enabled():
-        raise StorageError("Supabase is not configured.")
-
-    tracked = supabase_request(
-        "tracked_events"
-        f"?event_id=eq.{event_id}"
-        "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
-        "&order=last_seen_at.desc"
-        "&limit=1"
-    )
-    if not tracked:
-        raise StorageError("No snapshot history has been collected for this event yet.")
-
-    tracked_event = tracked[0]
-    snapshots = supabase_request(
-        "event_snapshots"
-        f"?tracked_event_id=eq.{tracked_event['id']}"
-        "&select=captured_at,total_seats,actual_sold,effective_sold,unavailable,available,"
-        "actual_sold_percent,effective_sold_percent,unavailable_percent,source"
-        "&order=captured_at.asc"
-    )
-    performances = supabase_request(
-        "performance_snapshots"
-        f"?tracked_event_id=eq.{tracked_event['id']}"
-        "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
-        "unavailable,available,effective_sold_percent,event_snapshots(captured_at)"
-        "&order=show_datetime.asc"
-    )
-    return {"event": tracked_event, "snapshots": snapshots, "performances": performances, "uplift": uplift_metrics(snapshots)}
+    return {
+        "day": compare(closest_before(1)),
+        "week": compare(closest_before(7)),
+    }
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -627,6 +715,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = analyse_event(unquote(value))
             try:
+                attach_daily_performance_deltas(payload)
+            except StorageError as exc:
+                payload["snapshotWarning"] = str(exc)
+            try:
                 payload["snapshot"] = store_snapshot(payload, "search")
             except StorageError as exc:
                 payload["snapshot"] = None
@@ -634,7 +726,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(200, payload)
         except TicketSearchError as exc:
             self.send_json(400, {"error": str(exc)})
-        except Exception as exc:
+        except Exception as exc:  # Keep the UI useful if TicketSearch changes a response.
             self.send_json(500, {"error": f"Unexpected error: {exc}"})
 
     def handle_daily_snapshot(self, parsed: Any) -> None:
