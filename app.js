@@ -79,6 +79,7 @@ function renderBookmarks() {
   const items = savedBookmarks();
   bookmarksEl.hidden = false;
   bookmarkListEl.innerHTML = "";
+  updateBookmarkButton();
 
   if (!items.length) {
     bookmarkListEl.innerHTML = `<p class="empty-bookmarks">Save up to ${MAX_BOOKMARKS} shows after analysing them.</p>`;
@@ -90,10 +91,18 @@ function renderBookmarks() {
     wrapper.className = "bookmark-item";
     wrapper.innerHTML = `
       <button class="bookmark-load" type="button" data-index="${index}">${escapeHtml(item.name)}</button>
-      <button class="bookmark-remove" type="button" data-index="${index}" aria-label="Remove ${escapeHtml(item.name)}">Remove</button>
+      <button class="bookmark-remove" type="button" data-index="${index}" aria-label="Remove ${escapeHtml(item.name)}">x</button>
     `;
     bookmarkListEl.appendChild(wrapper);
   });
+}
+
+function updateBookmarkButton() {
+  const items = savedBookmarks();
+  const isSaved = currentEvent && items.some((item) => bookmarkKey(item.url) === bookmarkKey(currentEvent.url));
+  saveBookmarkButton.textContent = isSaved ? "\u2605" : "\u2606";
+  saveBookmarkButton.classList.toggle("is-saved", Boolean(isSaved));
+  saveBookmarkButton.title = isSaved ? "Saved show" : "Save current show";
 }
 
 function saveCurrentBookmark() {
@@ -114,6 +123,7 @@ function saveCurrentBookmark() {
   items.unshift(nextItem);
   saveBookmarks(items);
   renderBookmarks();
+  updateBookmarkButton();
   setStatus(`Saved ${currentEvent.name}`);
 }
 
@@ -143,6 +153,7 @@ function render(data) {
     url: data.eventUrl || input.value.trim(),
   };
   saveBookmarkButton.disabled = !currentEvent.url;
+  updateBookmarkButton();
 
   setText("#event-name", data.eventName || `Event ${data.eventId}`);
   setText("#event-location", data.venue || data.location || "Location not supplied");
@@ -375,6 +386,7 @@ bookmarkListEl.addEventListener("click", (event) => {
     items.splice(index, 1);
     saveBookmarks(items);
     renderBookmarks();
+    updateBookmarkButton();
   }
 });
 
@@ -382,7 +394,10 @@ saveBookmarkButton.addEventListener("click", saveCurrentBookmark);
 
 async function analyse(event) {
   event.preventDefault();
+  currentEvent = null;
   submitButton.disabled = true;
+  saveBookmarkButton.disabled = true;
+  updateBookmarkButton();
   summaryEl.hidden = true;
   historyEl.hidden = true;
   resultsEl.hidden = true;
@@ -400,6 +415,7 @@ async function analyse(event) {
     setStatus(error.message, true);
   } finally {
     submitButton.disabled = false;
+    saveBookmarkButton.disabled = !currentEvent?.url;
   }
 }
 
