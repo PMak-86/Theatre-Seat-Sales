@@ -65,7 +65,10 @@
             <div><span id="uplift-week">-</span><small>Week on week</small></div>
           </div>
         </div>
-        <canvas id="history-chart" width="1000" height="260" aria-label="Effective sold seats over time"></canvas>
+        <div class="history-chart-wrap">
+          <canvas id="history-chart" width="1000" height="260" aria-label="Effective sold seats over time"></canvas>
+          <div id="history-tooltip" class="history-tooltip" hidden></div>
+        </div>
       </section>
 
       <section id="results" class="table-wrap" hidden>
