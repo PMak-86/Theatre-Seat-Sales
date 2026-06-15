@@ -49,6 +49,20 @@
         </div>
       </section>
 
+      <section id="history" class="history" hidden>
+        <div class="history-header">
+          <div>
+            <h3>Sales history</h3>
+            <p id="history-status">Snapshots start from the first analysed search.</p>
+          </div>
+          <div class="uplift-grid">
+            <div><span id="uplift-day">-</span><small>Day on day</small></div>
+            <div><span id="uplift-week">-</span><small>Week on week</small></div>
+          </div>
+        </div>
+        <canvas id="history-chart" width="1000" height="260" aria-label="Effective sold seats over time"></canvas>
+      </section>
+
       <section id="results" class="table-wrap" hidden>
         <table>
           <thead>
