@@ -10,9 +10,11 @@ const submitButton = form.querySelector("button");
 const bookmarksEl = document.querySelector("#bookmarks");
 const bookmarkListEl = document.querySelector("#bookmark-list");
 const saveBookmarkButton = document.querySelector("#save-bookmark");
+const historyTooltipEl = document.querySelector("#history-tooltip");
 const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
 const MAX_BOOKMARKS = 5;
 let currentEvent = null;
+let chartPoints = [];
 
 const formatNumber = new Intl.NumberFormat("en-AU");
 const formatDate = new Intl.DateTimeFormat("en-AU", {
@@ -29,6 +31,13 @@ const formatShortDate = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
   year: "numeric",
+});
+const formatSnapshotDateTime = new Intl.DateTimeFormat("en-AU", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
 });
 
 function setStatus(message, isError = false) {
@@ -252,6 +261,8 @@ function drawHistoryChart(snapshots) {
   const ctx = canvas.getContext("2d");
   const width = canvas.width;
   const height = canvas.height;
+  chartPoints = [];
+  hideHistoryTooltip();
   ctx.clearRect(0, 0, width, height);
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, width, height);
@@ -300,6 +311,12 @@ function drawHistoryChart(snapshots) {
   values.forEach((value, index) => {
     const x = pointX(index);
     const y = pointY(value);
+    chartPoints.push({
+      x,
+      y,
+      value,
+      capturedAt: snapshots[index].captured_at,
+    });
     ctx.fillStyle = "#071f3d";
     ctx.beginPath();
     ctx.arc(x, y, 5, 0, Math.PI * 2);
@@ -314,6 +331,65 @@ function drawHistoryChart(snapshots) {
   ctx.textAlign = "right";
   ctx.fillText(formatShortDate.format(lastDate), padding.left + plotWidth, height - 15);
   ctx.textAlign = "left";
+}
+
+function hideHistoryTooltip() {
+  if (historyTooltipEl) {
+    historyTooltipEl.hidden = true;
+  }
+}
+
+function showHistoryTooltip(point, clientX) {
+  if (!historyTooltipEl) return;
+
+  const canvas = document.querySelector("#history-chart");
+  const canvasRect = canvas.getBoundingClientRect();
+  const wrapRect = canvas.parentElement.getBoundingClientRect();
+  const scaleX = canvasRect.width / canvas.width;
+  const scaleY = canvasRect.height / canvas.height;
+  const pointLeft = canvasRect.left - wrapRect.left + point.x * scaleX;
+  const pointTop = canvasRect.top - wrapRect.top + point.y * scaleY;
+  const alignRight = clientX > canvasRect.left + canvasRect.width / 2;
+  const date = new Date(point.capturedAt);
+
+  historyTooltipEl.innerHTML = `
+    <strong>${formatSnapshotDateTime.format(date)}</strong>
+    <span>${formatNumber.format(point.value)} effective sold</span>
+  `;
+  historyTooltipEl.hidden = false;
+  historyTooltipEl.style.left = `${pointLeft}px`;
+  historyTooltipEl.style.top = `${pointTop}px`;
+  historyTooltipEl.style.transform = alignRight
+    ? "translate(calc(-100% - 12px), -50%)"
+    : "translate(12px, -50%)";
+}
+
+function handleHistoryPointer(event) {
+  if (!chartPoints.length) {
+    hideHistoryTooltip();
+    return;
+  }
+
+  const canvas = document.querySelector("#history-chart");
+  const rect = canvas.getBoundingClientRect();
+  const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
+  const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
+  const hitRadius = 18;
+  const nearest = chartPoints
+    .map((point) => ({
+      point,
+      distance: Math.hypot(point.x - x, point.y - y),
+    }))
+    .sort((a, b) => a.distance - b.distance)[0];
+
+  if (!nearest || nearest.distance > hitRadius) {
+    hideHistoryTooltip();
+    canvas.style.cursor = "default";
+    return;
+  }
+
+  canvas.style.cursor = "pointer";
+  showHistoryTooltip(nearest.point, event.clientX);
 }
 
 function renderBreakdown(breakdown = []) {
@@ -391,6 +467,11 @@ bookmarkListEl.addEventListener("click", (event) => {
 });
 
 saveBookmarkButton.addEventListener("click", saveCurrentBookmark);
+document.querySelector("#history-chart").addEventListener("pointermove", handleHistoryPointer);
+document.querySelector("#history-chart").addEventListener("pointerleave", () => {
+  document.querySelector("#history-chart").style.cursor = "default";
+  hideHistoryTooltip();
+});
 
 async function analyse(event) {
   event.preventDefault();
