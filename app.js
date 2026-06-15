@@ -2,6 +2,8 @@ const form = document.querySelector("#analyse-form");
 const input = document.querySelector("#event-input");
 const statusEl = document.querySelector("#status");
 const summaryEl = document.querySelector("#summary");
+const historyEl = document.querySelector("#history");
+const historyStatusEl = document.querySelector("#history-status");
 const resultsEl = document.querySelector("#results");
 const sessionsEl = document.querySelector("#sessions");
 const submitButton = form.querySelector("button");
@@ -48,6 +50,12 @@ function escapeHtml(value) {
 
 function setText(id, value) {
   document.querySelector(id).textContent = value;
+}
+
+function signedNumber(value) {
+  if (value === null || value === undefined) return "-";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${formatNumber.format(value)}`;
 }
 
 function formatDateRange(range) {
@@ -122,6 +130,109 @@ function render(data) {
 
   summaryEl.hidden = false;
   resultsEl.hidden = false;
+  loadHistory(data.eventId);
+}
+
+async function loadHistory(eventId) {
+  historyEl.hidden = true;
+  try {
+    const response = await fetch(`/api/history?eventId=${encodeURIComponent(eventId)}`);
+    const history = await response.json();
+    if (!response.ok) {
+      throw new Error(history.error || "No history found.");
+    }
+    renderHistory(history);
+    historyEl.hidden = false;
+  } catch (error) {
+    historyStatusEl.textContent = "Sales history will appear after snapshots are collected.";
+    setText("#uplift-day", "-");
+    setText("#uplift-week", "-");
+    drawHistoryChart([]);
+    historyEl.hidden = false;
+  }
+}
+
+function renderHistory(history) {
+  const snapshots = history.snapshots || [];
+  const latest = snapshots[snapshots.length - 1];
+  historyStatusEl.textContent = snapshots.length === 1
+    ? "1 snapshot collected. Uplift appears after daily snapshots run."
+    : `${formatNumber.format(snapshots.length)} snapshots collected.`;
+  setText("#uplift-day", signedNumber(history.uplift?.day?.effectiveSoldChange));
+  setText("#uplift-week", signedNumber(history.uplift?.week?.effectiveSoldChange));
+  if (latest) {
+    historyStatusEl.textContent += ` Latest effective sold: ${formatNumber.format(latest.effective_sold)}.`;
+  }
+  drawHistoryChart(snapshots);
+}
+
+function drawHistoryChart(snapshots) {
+  const canvas = document.querySelector("#history-chart");
+  const ctx = canvas.getContext("2d");
+  const width = canvas.width;
+  const height = canvas.height;
+  ctx.clearRect(0, 0, width, height);
+  ctx.fillStyle = "#fff";
+  ctx.fillRect(0, 0, width, height);
+
+  const padding = { top: 22, right: 28, bottom: 44, left: 68 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  ctx.strokeStyle = "#dfe6eb";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, padding.top + plotHeight);
+  ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+  ctx.stroke();
+
+  if (!snapshots.length) {
+    ctx.fillStyle = "#66737b";
+    ctx.font = "18px Segoe UI, Arial";
+    ctx.fillText("No snapshots yet", padding.left + 16, padding.top + 44);
+    return;
+  }
+
+  const values = snapshots.map((item) => Number(item.effective_sold || 0));
+  const maxValue = Math.max(...values, 1);
+  const minValue = Math.min(...values, 0);
+  const range = Math.max(maxValue - minValue, 1);
+  const pointX = (index) => padding.left + (snapshots.length === 1 ? plotWidth : (index / (snapshots.length - 1)) * plotWidth);
+  const pointY = (value) => padding.top + plotHeight - ((value - minValue) / range) * plotHeight;
+
+  ctx.fillStyle = "#66737b";
+  ctx.font = "13px Segoe UI, Arial";
+  ctx.fillText(formatNumber.format(maxValue), 10, padding.top + 8);
+  ctx.fillText(formatNumber.format(minValue), 10, padding.top + plotHeight);
+
+  ctx.strokeStyle = "#071f3d";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  values.forEach((value, index) => {
+    const x = pointX(index);
+    const y = pointY(value);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  values.forEach((value, index) => {
+    const x = pointX(index);
+    const y = pointY(value);
+    ctx.fillStyle = "#071f3d";
+    ctx.beginPath();
+    ctx.arc(x, y, 5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  const firstDate = new Date(snapshots[0].captured_at);
+  const lastDate = new Date(snapshots[snapshots.length - 1].captured_at);
+  ctx.fillStyle = "#66737b";
+  ctx.font = "13px Segoe UI, Arial";
+  ctx.fillText(formatShortDate.format(firstDate), padding.left, height - 15);
+  ctx.textAlign = "right";
+  ctx.fillText(formatShortDate.format(lastDate), padding.left + plotWidth, height - 15);
+  ctx.textAlign = "left";
 }
 
 function renderBreakdown(breakdown = []) {
@@ -179,6 +290,7 @@ async function analyse(event) {
   event.preventDefault();
   submitButton.disabled = true;
   summaryEl.hidden = true;
+  historyEl.hidden = true;
   resultsEl.hidden = true;
   setStatus("Analysing TicketSearch sessions...");
 
