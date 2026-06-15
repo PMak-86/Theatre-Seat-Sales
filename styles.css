@@ -369,6 +369,7 @@ h3 {
   height: auto;
   border: 1px solid var(--line);
   border-radius: 4px;
+  touch-action: manipulation;
 }
 
 .history-tooltip {
@@ -408,7 +409,7 @@ h3 {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 980px;
+  min-width: 1080px;
 }
 
 th,
@@ -591,6 +592,14 @@ td.numeric {
   background: #eef4f5;
   color: #42525a;
   font-size: 12px;
+}
+
+.delta-value {
+  display: inline-block;
+  min-width: 34px;
+  color: var(--navy);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 780px) {
@@ -783,7 +792,7 @@ td.numeric {
 
   .session-row td:first-child {
     display: flex;
-    grid-row: 1 / span 6;
+    grid-row: 1 / span 7;
     width: 38px;
     padding: 0;
     align-items: flex-start;
