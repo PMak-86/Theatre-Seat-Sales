@@ -16,12 +16,10 @@
         <form id="analyse-form" class="search">
           <input id="event-input" name="event" value="https://ccclaycock.sales.ticketsearch.com/sales/salesevent/162924" autocomplete="off">
           <button type="submit">Analyse</button>
+          <button id="save-bookmark" class="bookmark-save-button" type="button" disabled aria-label="Save current show">&#9734;</button>
         </form>
         <div id="bookmarks" class="bookmarks" hidden>
-          <div class="bookmark-header">
-            <strong>Saved shows</strong>
-            <button id="save-bookmark" class="secondary-button" type="button" disabled>Save current show</button>
-          </div>
+          <strong>Saved shows</strong>
           <div id="bookmark-list" class="bookmark-list"></div>
         </div>
       </section>
