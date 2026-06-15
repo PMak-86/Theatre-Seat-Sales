@@ -267,8 +267,8 @@ h2 {
 }
 
 .ring-inner {
-  width: 92px;
-  height: 92px;
+  width: 98px;
+  height: 98px;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -279,9 +279,9 @@ h2 {
 .ring-inner span {
   display: block;
   color: var(--navy);
-  font-size: 33px;
+  font-size: 29px;
   line-height: 1;
-  font-weight: 800;
+  font-weight: 600;
 }
 
 small {
@@ -653,8 +653,12 @@ td.numeric {
   }
 
   .ring-inner {
-    width: 82px;
-    height: 82px;
+    width: 86px;
+    height: 86px;
+  }
+
+  .ring-inner span {
+    font-size: 26px;
   }
 
   .metrics {
