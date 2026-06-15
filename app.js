@@ -7,6 +7,12 @@ const historyStatusEl = document.querySelector("#history-status");
 const resultsEl = document.querySelector("#results");
 const sessionsEl = document.querySelector("#sessions");
 const submitButton = form.querySelector("button");
+const bookmarksEl = document.querySelector("#bookmarks");
+const bookmarkListEl = document.querySelector("#bookmark-list");
+const saveBookmarkButton = document.querySelector("#save-bookmark");
+const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
+const MAX_BOOKMARKS = 5;
+let currentEvent = null;
 
 const formatNumber = new Intl.NumberFormat("en-AU");
 const formatDate = new Intl.DateTimeFormat("en-AU", {
@@ -52,6 +58,65 @@ function setText(id, value) {
   document.querySelector(id).textContent = value;
 }
 
+function savedBookmarks() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(BOOKMARK_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed) ? parsed.slice(0, MAX_BOOKMARKS) : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function saveBookmarks(items) {
+  localStorage.setItem(BOOKMARK_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_BOOKMARKS)));
+}
+
+function bookmarkKey(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function renderBookmarks() {
+  const items = savedBookmarks();
+  bookmarksEl.hidden = false;
+  bookmarkListEl.innerHTML = "";
+
+  if (!items.length) {
+    bookmarkListEl.innerHTML = `<p class="empty-bookmarks">Save up to ${MAX_BOOKMARKS} shows after analysing them.</p>`;
+    return;
+  }
+
+  items.forEach((item, index) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "bookmark-item";
+    wrapper.innerHTML = `
+      <button class="bookmark-load" type="button" data-index="${index}">${escapeHtml(item.name)}</button>
+      <button class="bookmark-remove" type="button" data-index="${index}" aria-label="Remove ${escapeHtml(item.name)}">Remove</button>
+    `;
+    bookmarkListEl.appendChild(wrapper);
+  });
+}
+
+function saveCurrentBookmark() {
+  if (!currentEvent) return;
+
+  const items = savedBookmarks();
+  const key = bookmarkKey(currentEvent.url);
+  const existingIndex = items.findIndex((item) => bookmarkKey(item.url) === key);
+  const nextItem = {
+    name: currentEvent.name,
+    url: currentEvent.url,
+  };
+
+  if (existingIndex >= 0) {
+    items.splice(existingIndex, 1);
+  }
+
+  items.unshift(nextItem);
+  saveBookmarks(items);
+  renderBookmarks();
+  setStatus(`Saved ${currentEvent.name}`);
+}
+
 function signedNumber(value) {
   if (value === null || value === undefined) return "-";
   const prefix = value > 0 ? "+" : "";
@@ -73,6 +138,11 @@ function render(data) {
   const image = document.querySelector("#event-image");
   image.src = data.imageUrl || "";
   image.alt = data.eventName || "Event image";
+  currentEvent = {
+    name: data.eventName || `Event ${data.eventId}`,
+    url: data.eventUrl || input.value.trim(),
+  };
+  saveBookmarkButton.disabled = !currentEvent.url;
 
   setText("#event-name", data.eventName || `Event ${data.eventId}`);
   setText("#event-location", data.venue || data.location || "Location not supplied");
@@ -286,6 +356,30 @@ sessionsEl.addEventListener("click", (event) => {
   button.setAttribute("aria-expanded", String(!isOpen));
 });
 
+bookmarkListEl.addEventListener("click", (event) => {
+  const loadButton = event.target.closest(".bookmark-load");
+  const removeButton = event.target.closest(".bookmark-remove");
+  const items = savedBookmarks();
+
+  if (loadButton) {
+    const item = items[Number(loadButton.dataset.index)];
+    if (!item) return;
+    input.value = item.url;
+    form.requestSubmit();
+    return;
+  }
+
+  if (removeButton) {
+    const index = Number(removeButton.dataset.index);
+    if (!Number.isInteger(index)) return;
+    items.splice(index, 1);
+    saveBookmarks(items);
+    renderBookmarks();
+  }
+});
+
+saveBookmarkButton.addEventListener("click", saveCurrentBookmark);
+
 async function analyse(event) {
   event.preventDefault();
   submitButton.disabled = true;
@@ -310,3 +404,4 @@ async function analyse(event) {
 }
 
 form.addEventListener("submit", analyse);
+renderBookmarks();
