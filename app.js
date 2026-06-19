@@ -260,14 +260,44 @@ function renderHistory(history) {
   const snapshots = history.snapshots || [];
   const latest = snapshots[snapshots.length - 1];
   historyStatusEl.textContent = snapshots.length === 1
-    ? "1 snapshot collected. Uplift appears after daily snapshots run."
-    : `${formatNumber.format(snapshots.length)} snapshots collected.`;
+    ? "1 daily snapshot collected. Uplift appears after the next scheduled snapshot."
+    : `${formatNumber.format(snapshots.length)} daily snapshots collected.`;
   setText("#uplift-day", signedNumber(history.uplift?.day?.effectiveSoldChange));
   setText("#uplift-week", signedNumber(history.uplift?.week?.effectiveSoldChange));
   if (latest) {
     historyStatusEl.textContent += ` Latest effective sold: ${formatNumber.format(latest.effective_sold)}.`;
   }
   drawHistoryChart(snapshots);
+}
+
+function chartDate(snapshot) {
+  if (snapshot.local_date) {
+    return new Date(`${snapshot.local_date}T12:00:00`);
+  }
+  return new Date(snapshot.captured_at);
+}
+
+function niceTicks(minValue, maxValue, count = 5) {
+  if (minValue === maxValue) {
+    const step = Math.max(1, Math.ceil(Math.max(maxValue, 1) / 4));
+    const start = Math.max(0, minValue - step * 2);
+    return Array.from({ length: count }, (_, index) => start + step * index);
+  }
+
+  const rawStep = (maxValue - minValue) / Math.max(count - 1, 1);
+  const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+  const normalized = rawStep / magnitude;
+  const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  const step = multiplier * magnitude;
+  const start = Math.floor(minValue / step) * step;
+  const end = Math.ceil(maxValue / step) * step;
+  const ticks = [];
+
+  for (let value = start; value <= end + step / 2; value += step) {
+    ticks.push(Math.round(value));
+  }
+
+  return ticks;
 }
 
 function drawHistoryChart(snapshots) {
@@ -281,16 +311,9 @@ function drawHistoryChart(snapshots) {
   ctx.fillStyle = "#fff";
   ctx.fillRect(0, 0, width, height);
 
-  const padding = { top: 22, right: 28, bottom: 44, left: 68 };
+  const padding = { top: 22, right: 30, bottom: 48, left: 76 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-  ctx.strokeStyle = "#dfe6eb";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padding.left, padding.top);
-  ctx.lineTo(padding.left, padding.top + plotHeight);
-  ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
-  ctx.stroke();
 
   if (!snapshots.length) {
     ctx.fillStyle = "#66737b";
@@ -300,16 +323,52 @@ function drawHistoryChart(snapshots) {
   }
 
   const values = snapshots.map((item) => Number(item.effective_sold || 0));
-  const maxValue = Math.max(...values, 1);
-  const minValue = Math.min(...values, 0);
+  const ticks = niceTicks(Math.min(...values, 0), Math.max(...values, 1), 5);
+  const minValue = ticks[0];
+  const maxValue = ticks[ticks.length - 1];
   const range = Math.max(maxValue - minValue, 1);
   const pointX = (index) => padding.left + (snapshots.length === 1 ? plotWidth : (index / (snapshots.length - 1)) * plotWidth);
   const pointY = (value) => padding.top + plotHeight - ((value - minValue) / range) * plotHeight;
 
+  ctx.strokeStyle = "#e8edf1";
+  ctx.lineWidth = 1;
   ctx.fillStyle = "#66737b";
   ctx.font = "13px Segoe UI, Arial";
-  ctx.fillText(formatNumber.format(maxValue), 10, padding.top + 8);
-  ctx.fillText(formatNumber.format(minValue), 10, padding.top + plotHeight);
+  ctx.textAlign = "right";
+  ticks.forEach((tick) => {
+    const y = pointY(tick);
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(padding.left + plotWidth, y);
+    ctx.stroke();
+    ctx.fillText(formatNumber.format(tick), padding.left - 10, y + 4);
+  });
+
+  const labelCount = Math.min(snapshots.length, width < 700 ? 4 : 6);
+  const xLabelIndices = labelCount <= 1
+    ? [0]
+    : Array.from({ length: labelCount }, (_, index) => Math.round(index * (snapshots.length - 1) / (labelCount - 1)))
+        .filter((value, index, list) => list.indexOf(value) === index);
+
+  ctx.strokeStyle = "#f0f3f6";
+  ctx.fillStyle = "#66737b";
+  ctx.textAlign = "center";
+  xLabelIndices.forEach((index) => {
+    const x = pointX(index);
+    ctx.beginPath();
+    ctx.moveTo(x, padding.top);
+    ctx.lineTo(x, padding.top + plotHeight);
+    ctx.stroke();
+    ctx.fillText(formatShortDate.format(chartDate(snapshots[index])), x, height - 16);
+  });
+
+  ctx.strokeStyle = "#cfd9e1";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(padding.left, padding.top);
+  ctx.lineTo(padding.left, padding.top + plotHeight);
+  ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
+  ctx.stroke();
 
   ctx.strokeStyle = "#071f3d";
   ctx.lineWidth = 4;
@@ -336,14 +395,6 @@ function drawHistoryChart(snapshots) {
     ctx.arc(x, y, 5, 0, Math.PI * 2);
     ctx.fill();
   });
-
-  const firstDate = new Date(snapshots[0].captured_at);
-  const lastDate = new Date(snapshots[snapshots.length - 1].captured_at);
-  ctx.fillStyle = "#66737b";
-  ctx.font = "13px Segoe UI, Arial";
-  ctx.fillText(formatShortDate.format(firstDate), padding.left, height - 15);
-  ctx.textAlign = "right";
-  ctx.fillText(formatShortDate.format(lastDate), padding.left + plotWidth, height - 15);
   ctx.textAlign = "left";
 }
 
