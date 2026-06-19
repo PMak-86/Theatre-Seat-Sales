@@ -4,7 +4,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
@@ -629,10 +629,12 @@ def event_history(event_id: int) -> dict[str, Any]:
     snapshots = supabase_request(
         "event_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
+        "&source=eq.daily"
         "&select=captured_at,total_seats,actual_sold,effective_sold,unavailable,available,"
         "actual_sold_percent,effective_sold_percent,unavailable_percent,source"
         "&order=captured_at.asc"
     )
+    daily_snapshots = daily_snapshot_series(snapshots)
     performances = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
@@ -642,10 +644,55 @@ def event_history(event_id: int) -> dict[str, Any]:
     )
     return {
         "event": tracked_event,
-        "snapshots": snapshots,
+        "snapshots": daily_snapshots,
         "performances": performances,
-        "uplift": uplift_metrics(snapshots),
+        "uplift": uplift_metrics(daily_snapshots),
     }
+
+
+def snapshot_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def first_sunday(year: int, month: int) -> date:
+    first = date(year, month, 1)
+    return first + timedelta(days=(6 - first.weekday()) % 7)
+
+
+def sydney_offset_hours(moment_utc: datetime) -> int:
+    year = moment_utc.year
+    dst_start_year = year if moment_utc.month >= 10 else year - 1
+    dst_end_year = year + 1 if moment_utc.month >= 10 else year
+    dst_start_day = first_sunday(dst_start_year, 10)
+    dst_end_day = first_sunday(dst_end_year, 4)
+    dst_start_utc = datetime(
+        dst_start_day.year,
+        dst_start_day.month,
+        dst_start_day.day,
+        2,
+        tzinfo=timezone.utc,
+    ) - timedelta(hours=10)
+    dst_end_utc = datetime(
+        dst_end_day.year,
+        dst_end_day.month,
+        dst_end_day.day,
+        3,
+        tzinfo=timezone.utc,
+    ) - timedelta(hours=11)
+    return 11 if dst_start_utc <= moment_utc < dst_end_utc else 10
+
+
+def snapshot_local_date(snapshot: dict[str, Any]) -> str:
+    captured = snapshot_datetime(snapshot["captured_at"]).astimezone(timezone.utc)
+    return (captured + timedelta(hours=sydney_offset_hours(captured))).date().isoformat()
+
+
+def daily_snapshot_series(snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    by_date: dict[str, dict[str, Any]] = {}
+    for snapshot in snapshots:
+        local_date = snapshot_local_date(snapshot)
+        by_date[local_date] = {**snapshot, "local_date": local_date}
+    return [by_date[key] for key in sorted(by_date)]
 
 
 def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
@@ -653,18 +700,17 @@ def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
         return {"day": None, "week": None}
 
     latest = snapshots[-1]
-    latest_dt = datetime.fromisoformat(latest["captured_at"].replace("Z", "+00:00"))
+    latest_date = datetime.fromisoformat(latest["local_date"]).date()
 
-    def closest_before(days: int) -> dict[str, Any] | None:
-        target_seconds = days * 86400
+    def closest_daily_date_before(days: int) -> dict[str, Any] | None:
+        target_date = latest_date - timedelta(days=days)
         best = None
-        best_delta = None
+        best_delta: int | None = None
         for item in snapshots[:-1]:
-            captured = datetime.fromisoformat(item["captured_at"].replace("Z", "+00:00"))
-            age = (latest_dt - captured).total_seconds()
-            if age < target_seconds:
+            item_date = datetime.fromisoformat(item["local_date"]).date()
+            if item_date > target_date:
                 continue
-            delta = abs(age - target_seconds)
+            delta = abs((target_date - item_date).days)
             if best_delta is None or delta < best_delta:
                 best = item
                 best_delta = delta
@@ -688,8 +734,8 @@ def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
         }
 
     return {
-        "day": compare(closest_before(1)),
-        "week": compare(closest_before(7)),
+        "day": compare(snapshots[-2] if len(snapshots) > 1 else None),
+        "week": compare(closest_daily_date_before(7)),
     }
 
 
