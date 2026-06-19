@@ -525,10 +525,12 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
 def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
     for session in data.get("sessions", []):
         session["salesSinceDailySnapshot"] = None
+        session["salesSinceDailySnapshotRaw"] = None
         session["dailySnapshotCapturedAt"] = None
 
     summary = data.get("summary") or {}
     summary["salesSinceDailySnapshot"] = None
+    summary["salesSinceDailySnapshotRaw"] = None
     summary["dailySnapshotCapturedAt"] = None
 
     if not storage_enabled():
@@ -548,35 +550,47 @@ def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
         "event_snapshots"
         f"?tracked_event_id=eq.{tracked[0]['id']}"
         "&source=eq.daily"
-        "&select=id,captured_at,effective_sold"
+        "&select=id,captured_at,actual_sold,effective_sold"
         "&order=captured_at.desc"
-        "&limit=1"
+        "&limit=14"
     )
     if not snapshots:
         return
 
-    baseline = snapshots[0]
+    current_local_date = sydney_local_date(datetime.now(timezone.utc))
+    baseline = next(
+        (snapshot for snapshot in snapshots if snapshot_local_date(snapshot) == current_local_date),
+        None,
+    )
+    if not baseline:
+        return
+
     performances = supabase_request(
         "performance_snapshots"
         f"?event_snapshot_id=eq.{baseline['id']}"
-        "&select=schedule_id,effective_sold"
+        "&select=schedule_id,actual_sold,effective_sold"
     )
-    baseline_by_schedule = {int(item["schedule_id"]): int(item["effective_sold"] or 0) for item in performances}
+    baseline_by_schedule = {int(item["schedule_id"]): int(item["actual_sold"] or 0) for item in performances}
     total_delta = 0
+    total_raw_delta = 0
     matched = False
 
     for session in data.get("sessions", []):
         baseline_sold = baseline_by_schedule.get(int(session["scheduleId"]))
         if baseline_sold is None:
             continue
-        delta = int(session["effectiveSoldSeats"]) - baseline_sold
+        raw_delta = int(session["ticketsSold"]) - baseline_sold
+        delta = max(raw_delta, 0)
         session["salesSinceDailySnapshot"] = delta
+        session["salesSinceDailySnapshotRaw"] = raw_delta
         session["dailySnapshotCapturedAt"] = baseline["captured_at"]
         total_delta += delta
+        total_raw_delta += raw_delta
         matched = True
 
     if matched:
         summary["salesSinceDailySnapshot"] = total_delta
+        summary["salesSinceDailySnapshotRaw"] = total_raw_delta
         summary["dailySnapshotCapturedAt"] = baseline["captured_at"]
 
 
@@ -684,7 +698,12 @@ def sydney_offset_hours(moment_utc: datetime) -> int:
 
 def snapshot_local_date(snapshot: dict[str, Any]) -> str:
     captured = snapshot_datetime(snapshot["captured_at"]).astimezone(timezone.utc)
-    return (captured + timedelta(hours=sydney_offset_hours(captured))).date().isoformat()
+    return sydney_local_date(captured)
+
+
+def sydney_local_date(moment_utc: datetime) -> str:
+    moment_utc = moment_utc.astimezone(timezone.utc)
+    return (moment_utc + timedelta(hours=sydney_offset_hours(moment_utc))).date().isoformat()
 
 
 def daily_snapshot_series(snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
