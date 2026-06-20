@@ -398,7 +398,7 @@ h3 {
 
 .table-wrap {
   margin-top: 16px;
-  overflow-x: auto;
+  overflow-x: hidden;
   background: #fff;
   border: 1px solid #dfe5ea;
   border-top: 0;
@@ -409,30 +409,69 @@ h3 {
 table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 1080px;
+  table-layout: fixed;
+  min-width: 0;
 }
 
 th,
 td {
-  padding: 18px 22px;
-  text-align: left;
+  padding: 16px 10px;
+  text-align: center;
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
-  font-size: 17px;
+  font-size: 15px;
 }
 
 th:first-child,
 td:first-child {
-  width: 48px;
+  width: 4%;
+  padding-left: 8px;
   padding-right: 8px;
+}
+
+th:nth-child(2),
+td:nth-child(2) {
+  width: 15%;
+}
+
+th:nth-child(3),
+td:nth-child(3) {
+  width: 10%;
+}
+
+th:nth-child(4),
+td:nth-child(4) {
+  width: 14%;
+}
+
+th:nth-child(5),
+td:nth-child(5),
+th:nth-child(6),
+td:nth-child(6) {
+  width: 12%;
+}
+
+th:nth-child(7),
+td:nth-child(7) {
+  width: 10%;
+}
+
+th:nth-child(8),
+td:nth-child(8) {
+  width: 24%;
 }
 
 th {
   color: #fff;
   text-transform: uppercase;
   background: var(--navy);
-  font-size: 15px;
+  font-size: 13px;
   letter-spacing: 0;
+}
+
+.stacked-heading {
+  display: inline-block;
+  line-height: 1.15;
 }
 
 th:first-child {
@@ -450,10 +489,10 @@ td.numeric {
 
 .bar {
   display: grid;
-  grid-template-columns: 56px 1fr;
+  grid-template-columns: 52px minmax(86px, 1fr);
   align-items: center;
-  gap: 18px;
-  min-width: 240px;
+  gap: 10px;
+  min-width: 0;
 }
 
 .track {
@@ -779,6 +818,7 @@ td.numeric {
     padding: 7px 0;
     border: 0;
     white-space: normal;
+    text-align: center;
     font-size: 15px;
   }
 
@@ -787,6 +827,7 @@ td.numeric {
     color: #66737b;
     font-size: 12px;
     font-weight: 700;
+    text-align: left;
     text-transform: uppercase;
   }
 
