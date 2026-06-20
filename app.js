@@ -198,7 +198,7 @@ function render(data) {
       <td data-label="Sold">${formatNumber.format(session.ticketsSold)} / ${formatNumber.format(session.totalSeats)}</td>
       <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
       <td data-label="Available">${formatNumber.format(session.availableSeats)}</td>
-      <td data-label="24h sales" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
+      <td data-label="Sold today" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
         <span class="delta-value">${dailyDeltaLabel(session.salesSinceDailySnapshot)}</span>
       </td>
       <td data-label="% sold">
@@ -223,7 +223,7 @@ function render(data) {
             <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sold %</span>
             <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
             <span>${formatNumber.format(session.availableSeats)} available to buy</span>
-            <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} since daily snapshot</span>
+            <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
           </div>
           ${renderBreakdown(session.breakdown)}
         </div>
