@@ -9,7 +9,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
@@ -51,6 +51,10 @@ class TicketSearchError(Exception):
     pass
 
 
+class AnalysisError(Exception):
+    pass
+
+
 class StorageError(Exception):
     pass
 
@@ -85,6 +89,30 @@ def request_json(
         raise TicketSearchError(f"TicketSearch returned HTTP {exc.code}: {details}") from exc
     except URLError as exc:
         raise TicketSearchError(f"Could not connect to TicketSearch: {exc.reason}") from exc
+
+
+def request_text(url: str, referer: str | None = None, accept: str = "text/html,*/*") -> str:
+    headers = {
+        "Accept": accept,
+        "Referer": referer or url,
+        "User-Agent": "Mozilla/5.0",
+    }
+    try:
+        with urlopen(Request(url, headers=headers), timeout=30) as response:
+            return response.read().decode("utf-8", errors="replace")
+    except HTTPError as exc:
+        details = exc.read().decode("utf-8", errors="replace")
+        raise AnalysisError(f"Website returned HTTP {exc.code}: {details[:400]}") from exc
+    except URLError as exc:
+        raise AnalysisError(f"Could not connect to website: {exc.reason}") from exc
+
+
+def request_public_json(url: str, referer: str | None = None) -> Any:
+    text = request_text(url, referer=referer, accept="application/json,text/html,*/*")
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise AnalysisError("Website did not return valid JSON.") from exc
 
 
 def storage_enabled() -> bool:
@@ -203,6 +231,65 @@ def date_range(sessions: list[dict[str, Any]]) -> dict[str, str | None]:
 
 def canonical_event_url(mask_url: str, event_id: int) -> str:
     return f"{mask_url}/sales/salesevent/{event_id}"
+
+
+def canonical_trybooking_url(event_id: int) -> str:
+    return f"https://www.trybooking.com/events/landing/{event_id}"
+
+
+def html_unescape(value: str) -> str:
+    import html
+
+    return html.unescape(re.sub(r"\s+", " ", value)).strip()
+
+
+def html_attr(tag: str, name: str) -> str:
+    match = re.search(rf'{re.escape(name)}="([^"]*)"', tag, re.IGNORECASE)
+    return html_unescape(match.group(1)) if match else ""
+
+
+def strip_tags(value: str) -> str:
+    return html_unescape(re.sub(r"<[^>]+>", " ", value))
+
+
+def json_ld_event(html: str) -> dict[str, Any]:
+    for match in re.finditer(
+        r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
+        html,
+        re.IGNORECASE | re.DOTALL,
+    ):
+        raw = html_unescape(match.group(1))
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            continue
+        items = data if isinstance(data, list) else [data]
+        for item in items:
+            if isinstance(item, dict) and str(item.get("@type", "")).lower() == "event":
+                return item
+    return {}
+
+
+def meta_content(html: str, property_name: str) -> str:
+    pattern = (
+        rf'<meta[^>]+(?:property|name)="{re.escape(property_name)}"[^>]+content="([^"]*)"'
+        rf'|<meta[^>]+content="([^"]*)"[^>]+(?:property|name)="{re.escape(property_name)}"'
+    )
+    match = re.search(pattern, html, re.IGNORECASE)
+    if not match:
+        return ""
+    return html_unescape(match.group(1) or match.group(2) or "")
+
+
+def parse_trybooking_input(value: str) -> int | None:
+    raw = value.strip()
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    if parsed.netloc.lower() not in {"www.trybooking.com", "trybooking.com"}:
+        return None
+    match = re.search(r"/events/(?:landing/)?(\d+)", parsed.path, re.IGNORECASE)
+    return int(match.group(1)) if match else None
 
 
 def add_breakdown(
@@ -446,6 +533,222 @@ def analyse_event(value: str) -> dict[str, Any]:
     }
 
 
+def trybooking_session_datetime(date_value: str, time_label: str, timezone_offset: str) -> str:
+    start_label = time_label.split("-")[0].strip()
+    try:
+        parsed = datetime.strptime(start_label, "%I:%M %p")
+        return f"{date_value}T{parsed.hour:02d}:{parsed.minute:02d}:00{timezone_offset}"
+    except ValueError:
+        return f"{date_value}T00:00:00{timezone_offset}"
+
+
+def trybooking_timezone_offset(html: str) -> str:
+    match = re.search(r"\(UTC([+-]\d{1,2})(?::?(\d{2}))?\)", html)
+    if not match:
+        return "+10:00"
+    hours = int(match.group(1))
+    minutes = match.group(2) or "00"
+    return f"{hours:+03d}:{minutes}"
+
+
+def trybooking_event_metadata(event_id: int, landing_html: str) -> dict[str, Any]:
+    event_json = json_ld_event(landing_html)
+    location = event_json.get("location") if isinstance(event_json.get("location"), dict) else {}
+    address = location.get("address") if isinstance(location.get("address"), dict) else {}
+    address_parts = [
+        address.get("streetAddress"),
+        address.get("addressLocality"),
+        address.get("addressRegion"),
+        address.get("postalCode"),
+    ]
+    title_match = re.search(r"<title>(.*?)</title>", landing_html, re.IGNORECASE | re.DOTALL)
+    title = strip_tags(title_match.group(1)) if title_match else ""
+    name = event_json.get("name") or meta_content(landing_html, "og:title") or title.split("|")[0].strip()
+    image = event_json.get("image") or meta_content(landing_html, "og:image")
+    if isinstance(image, list):
+        image = image[0] if image else ""
+
+    return {
+        "eventName": html_unescape(str(name or f"TryBooking event {event_id}")),
+        "venue": html_unescape(str(location.get("name") or "")),
+        "location": ", ".join(str(part) for part in address_parts if part),
+        "imageUrl": str(image or ""),
+        "dateStart": event_json.get("startDate"),
+        "dateEnd": event_json.get("endDate"),
+    }
+
+
+def trybooking_sessions(event_id: int, landing_url: str) -> list[dict[str, str]]:
+    calendar_url = f"https://www.trybooking.com/events/calendar-session-times/{event_id}"
+    dates = request_public_json(calendar_url, referer=landing_url)
+    sessions: list[dict[str, str]] = []
+    for item in dates if isinstance(dates, list) else []:
+        event_date = str(item.get("eventDate") or "")[:10]
+        if not event_date:
+            continue
+        partial_url = f"{landing_url}/sessions-partial?date={quote(event_date)}"
+        partial_html = request_text(partial_url, referer=landing_url)
+        times = [
+            html_unescape(match.group(1))
+            for match in re.finditer(r'data-tb-title="([^"]+)"', partial_html, re.IGNORECASE)
+        ]
+        hrefs = [
+            html_unescape(match.group(1))
+            for match in re.finditer(r'href="([^"]+/sessions/\d+/sections\?date=[^"]+)"', partial_html, re.IGNORECASE)
+        ]
+        for index, href in enumerate(hrefs):
+            session_match = re.search(r"/sessions/(\d+)/", href)
+            if not session_match:
+                continue
+            sessions.append(
+                {
+                    "date": event_date,
+                    "time": times[index] if index < len(times) else "",
+                    "sessionId": session_match.group(1),
+                    "href": urljoin(landing_url, href),
+                }
+            )
+    return sessions
+
+
+def analyse_trybooking_session(
+    event_id: int,
+    session: dict[str, str],
+    timezone_offset: str,
+) -> dict[str, Any]:
+    section_html = request_text(session["href"], referer=canonical_trybooking_url(event_id))
+    section_match = re.search(r'data-section-id="(\d+)"', section_html, re.IGNORECASE)
+    if not section_match:
+        raise AnalysisError(f"TryBooking did not return a section for session {session['sessionId']}.")
+
+    section_id = section_match.group(1)
+    seat_url = (
+        f"https://www.trybooking.com/events/{event_id}/sessions/{session['sessionId']}"
+        f"/sections/{section_id}/seats?p="
+    )
+    seat_html = request_text(seat_url, referer=session["href"])
+    seat_tags = list(
+        re.finditer(
+            r'<button\b(?=[^>]*data-tb-seat-number="(?!-1")[^"]+")[^>]*class="([^"]*)"[^>]*>',
+            seat_html,
+            re.IGNORECASE,
+        )
+    )
+    available = 0
+    unavailable = 0
+    unclassified = 0
+    for tag in seat_tags:
+        classes = tag.group(1).strip().lower()
+        if "available" in classes:
+            available += 1
+        elif "booked" in classes:
+            unavailable += 1
+        else:
+            unclassified += 1
+
+    total = len(seat_tags)
+    effective_sold = max(total - available, 0)
+    effective_percent = (effective_sold / total * 100) if total else 0
+    breakdown = []
+    if unavailable:
+        breakdown.append(
+            {
+                "code": "TB_UNAVAILABLE",
+                "label": "TryBooking unavailable seats",
+                "kind": "unavailable",
+                "count": unavailable,
+                "excludedFromCapacity": 0,
+                "countsTowardSoldPercent": True,
+            }
+        )
+    if unclassified:
+        breakdown.append(
+            {
+                "code": "TB_UNCLASSIFIED",
+                "label": "TryBooking seat-numbered cells without a public status",
+                "kind": "unclassified",
+                "count": unclassified,
+                "excludedFromCapacity": 0,
+                "countsTowardSoldPercent": True,
+            }
+        )
+
+    return {
+        "scheduleId": int(session["sessionId"]),
+        "dateTime": trybooking_session_datetime(session["date"], session.get("time", ""), timezone_offset),
+        "description": session.get("time", ""),
+        "totalSeats": total,
+        "availableSeats": available,
+        "ticketsSold": effective_sold,
+        "effectiveSoldSeats": effective_sold,
+        "unavailableSeats": 0,
+        "soldPercent": effective_percent,
+        "effectiveSoldPercent": effective_percent,
+        "unavailablePercent": effective_percent,
+        "notAvailableSeats": effective_sold,
+        "breakdown": breakdown,
+        "thresholdAlert": None,
+        "isSoldOut": bool(total and available == 0),
+    }
+
+
+def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
+    landing_url = canonical_trybooking_url(event_id)
+    landing_html = request_text(landing_url)
+    metadata = trybooking_event_metadata(event_id, landing_html)
+    timezone_offset = trybooking_timezone_offset(landing_html)
+    sessions = [
+        analyse_trybooking_session(event_id, session, timezone_offset)
+        for session in trybooking_sessions(event_id, landing_url)
+    ]
+    sessions.sort(key=lambda item: item.get("dateTime") or "")
+
+    total_seats = sum(item["totalSeats"] for item in sessions)
+    available = sum(item["availableSeats"] for item in sessions)
+    sold = sum(item["ticketsSold"] for item in sessions)
+    effective_sold = sum(item["effectiveSoldSeats"] for item in sessions)
+    unavailable = sum(item["unavailableSeats"] for item in sessions)
+
+    return {
+        "eventId": event_id,
+        "eventUrl": landing_url,
+        "orgCode": "trybooking",
+        "maskUrl": "https://www.trybooking.com",
+        "provider": "trybooking",
+        "eventName": metadata["eventName"],
+        "venue": metadata["venue"],
+        "location": metadata["location"],
+        "imageUrl": metadata["imageUrl"],
+        "dateRange": date_range(sessions)
+        if sessions
+        else {"start": metadata.get("dateStart"), "end": metadata.get("dateEnd")},
+        "layoutType": "TryBookingReservedSeating",
+        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "summary": {
+            "performances": len(sessions),
+            "totalSeats": total_seats,
+            "availableSeats": available,
+            "ticketsSold": sold,
+            "effectiveSoldSeats": effective_sold,
+            "unavailableSeats": unavailable,
+            "soldPercent": (sold / total_seats * 100) if total_seats else 0,
+            "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
+            "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
+        },
+        "sessions": sessions,
+    }
+
+
+def analyse_any_event(value: str) -> dict[str, Any]:
+    trybooking_id = parse_trybooking_input(value)
+    if trybooking_id is not None:
+        return analyse_trybooking_event(trybooking_id)
+
+    data = analyse_event(value)
+    data["provider"] = "ticketsearch"
+    return data
+
+
 def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, Any] | None:
     if not storage_enabled():
         return None
@@ -607,7 +910,7 @@ def run_daily_snapshots() -> dict[str, Any]:
     results = []
     for event in events:
         try:
-            data = analyse_event(event["event_url"])
+            data = analyse_any_event(event["event_url"])
             stored = store_snapshot(data, "daily")
             results.append({
                 "eventUrl": event["event_url"],
@@ -625,17 +928,29 @@ def run_daily_snapshots() -> dict[str, Any]:
     return {"trackedEvents": len(events), "results": results}
 
 
-def event_history(event_id: int) -> dict[str, Any]:
+def event_history(event_id: int | None = None, event_url: str | None = None) -> dict[str, Any]:
     if not storage_enabled():
         raise StorageError("Supabase is not configured.")
 
-    tracked = supabase_request(
-        "tracked_events"
-        f"?event_id=eq.{event_id}"
-        "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
-        "&order=last_seen_at.desc"
-        "&limit=1"
-    )
+    if event_url:
+        tracked = supabase_request(
+            "tracked_events"
+            f"?event_url=eq.{quote(event_url, safe='')}"
+            "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
+            "&order=last_seen_at.desc"
+            "&limit=1"
+        )
+    elif event_id is not None:
+        tracked = supabase_request(
+            "tracked_events"
+            f"?event_id=eq.{event_id}"
+            "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
+            "&order=last_seen_at.desc"
+            "&limit=1"
+        )
+    else:
+        raise StorageError("Provide an event URL or event ID.")
+
     if not tracked:
         raise StorageError("No snapshot history has been collected for this event yet.")
 
@@ -778,7 +1093,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_analyse(self, parsed: Any) -> None:
         value = parse_qs(parsed.query).get("input", [""])[0]
         try:
-            payload = analyse_event(unquote(value))
+            payload = analyse_any_event(unquote(value))
             try:
                 attach_daily_performance_deltas(payload)
             except StorageError as exc:
@@ -789,7 +1104,7 @@ class Handler(BaseHTTPRequestHandler):
                 payload["snapshot"] = None
                 payload["snapshotWarning"] = str(exc)
             self.send_json(200, payload)
-        except TicketSearchError as exc:
+        except (TicketSearchError, AnalysisError) as exc:
             self.send_json(400, {"error": str(exc)})
         except Exception as exc:  # Keep the UI useful if TicketSearch changes a response.
             self.send_json(500, {"error": f"Unexpected error: {exc}"})
@@ -808,12 +1123,14 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(500, {"error": f"Unexpected error: {exc}"})
 
     def handle_history(self, parsed: Any) -> None:
-        event_id_raw = parse_qs(parsed.query).get("eventId", [""])[0]
-        if not event_id_raw.isdigit():
-            self.send_json(400, {"error": "Provide an eventId query parameter."})
+        params = parse_qs(parsed.query)
+        event_url = unquote(params.get("eventUrl", [""])[0])
+        event_id_raw = params.get("eventId", [""])[0]
+        if not event_url and not event_id_raw.isdigit():
+            self.send_json(400, {"error": "Provide an eventUrl or eventId query parameter."})
             return
         try:
-            self.send_json(200, event_history(int(event_id_raw)))
+            self.send_json(200, event_history(int(event_id_raw) if event_id_raw.isdigit() else None, event_url or None))
         except StorageError as exc:
             self.send_json(404, {"error": str(exc)})
         except Exception as exc:

@@ -12,7 +12,7 @@ const bookmarkListEl = document.querySelector("#bookmark-list");
 const saveBookmarkButton = document.querySelector("#save-bookmark");
 const historyTooltipEl = document.querySelector("#history-tooltip");
 const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
-const MAX_BOOKMARKS = 5;
+const MAX_BOOKMARKS = 8;
 let currentEvent = null;
 let chartPoints = [];
 
@@ -234,13 +234,16 @@ function render(data) {
 
   summaryEl.hidden = false;
   resultsEl.hidden = false;
-  loadHistory(data.eventId);
+  loadHistory(data);
 }
 
-async function loadHistory(eventId) {
+async function loadHistory(data) {
   historyEl.hidden = true;
   try {
-    const response = await fetch(`/api/history?eventId=${encodeURIComponent(eventId)}`);
+    const historyUrl = data.eventUrl
+      ? `/api/history?eventUrl=${encodeURIComponent(data.eventUrl)}`
+      : `/api/history?eventId=${encodeURIComponent(data.eventId)}`;
+    const response = await fetch(historyUrl);
     const history = await response.json();
     if (!response.ok) {
       throw new Error(history.error || "No history found.");
@@ -459,7 +462,7 @@ function handleHistoryPointer(event) {
 
 function renderBreakdown(breakdown = []) {
   if (!breakdown.length) {
-    return `<p class="empty-detail">No detailed seat-map codes were returned for this session.</p>`;
+    return `<p class="empty-detail">No detailed unavailable-seat codes were returned for this session.</p>`;
   }
 
   const rows = breakdown
@@ -549,7 +552,7 @@ async function analyse(event) {
   summaryEl.hidden = true;
   historyEl.hidden = true;
   resultsEl.hidden = true;
-  setStatus("Analysing TicketSearch sessions...");
+  setStatus("Analysing sessions...");
 
   try {
     const response = await fetch(`/api/analyse?input=${encodeURIComponent(input.value)}`);
@@ -558,7 +561,10 @@ async function analyse(event) {
       throw new Error(data.error || "Analysis failed.");
     }
     render(data);
-    setStatus("Analysis complete. Sold % includes actual sold seats and mapped sold-equivalent hold codes.");
+    const message = data.provider === "trybooking"
+      ? "Analysis complete. TryBooking sold % uses seats not currently available to buy because detailed hold codes are not public."
+      : "Analysis complete. Sold % includes actual sold seats and mapped sold-equivalent hold codes.";
+    setStatus(message);
   } catch (error) {
     setStatus(error.message, true);
   } finally {
