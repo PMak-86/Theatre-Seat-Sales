@@ -237,6 +237,55 @@ def canonical_trybooking_url(event_id: int) -> str:
     return f"https://www.trybooking.com/events/landing/{event_id}"
 
 
+def revenue_estimate(
+    seat_count: int,
+    price_min: float | None,
+    price_max: float | None = None,
+    basis: str = "",
+) -> dict[str, Any] | None:
+    if seat_count <= 0 or price_min is None:
+        return None
+
+    high = price_max if price_max is not None else price_min
+    low = min(price_min, high)
+    high = max(price_min, high)
+    average = (low + high) / 2
+    return {
+        "amount": round(seat_count * average, 2),
+        "minAmount": round(seat_count * low, 2),
+        "maxAmount": round(seat_count * high, 2),
+        "currency": "AUD",
+        "seatCount": seat_count,
+        "priceMin": low,
+        "priceMax": high,
+        "basis": basis,
+    }
+
+
+def combine_revenue_estimates(estimates: list[dict[str, Any] | None], basis: str) -> dict[str, Any] | None:
+    valid = [estimate for estimate in estimates if estimate]
+    if not valid:
+        return None
+    return {
+        "amount": round(sum(float(item["amount"]) for item in valid), 2),
+        "minAmount": round(sum(float(item["minAmount"]) for item in valid), 2),
+        "maxAmount": round(sum(float(item["maxAmount"]) for item in valid), 2),
+        "currency": "AUD",
+        "seatCount": sum(int(item["seatCount"]) for item in valid),
+        "basis": basis,
+    }
+
+
+def parse_price_values(value: str) -> tuple[float | None, float | None]:
+    numbers = [
+        float(match.group(1).replace(",", ""))
+        for match in re.finditer(r"\$?\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)", value)
+    ]
+    if not numbers:
+        return None, None
+    return min(numbers), max(numbers)
+
+
 def html_unescape(value: str) -> str:
     import html
 
@@ -360,6 +409,14 @@ def analyse_session(
     )
 
     price_levels = price_result.get("EventDetailSchedulePriceLevels") or []
+    level_prices = {
+        int(level["PriceLevelId"]): (
+            float(level["PriceRangeStart"]) if level.get("PriceRangeStart") is not None else None,
+            float(level["PriceRangeEnd"]) if level.get("PriceRangeEnd") is not None else None,
+        )
+        for level in price_levels
+        if level.get("PriceLevelId") is not None
+    }
     mappings = []
     for level in price_levels:
         mappings.extend(level.get("PLSeatMapObjectMappings") or [])
@@ -372,12 +429,25 @@ def analyse_session(
         effective_sold = 0
         non_sold_unavailable = 0
         non_sold_unavailable_in_capacity = 0
+        sold_revenue_amount = 0.0
+        sold_revenue_min = 0.0
+        sold_revenue_max = 0.0
+        priced_sold_seats = 0
 
         for seat in mappings:
             excluded = bool(seat.get("IsExcludeFromCapacity"))
             if seat.get("IsSold"):
                 explicit_sold += 1
                 effective_sold += 1
+                price_min, price_max = level_prices.get(int(seat.get("PriceLevelId") or 0), (None, None))
+                if price_min is not None:
+                    high = price_max if price_max is not None else price_min
+                    low = min(price_min, high)
+                    high = max(price_min, high)
+                    sold_revenue_amount += (low + high) / 2
+                    sold_revenue_min += low
+                    sold_revenue_max += high
+                    priced_sold_seats += 1
                 add_breakdown(breakdown, "SOLD", "Sold seats", "sold", excluded, True)
                 continue
 
@@ -423,6 +493,16 @@ def analyse_session(
         available = max(total - explicit_sold - non_sold_unavailable_in_capacity, 0)
         tickets_sold = explicit_sold
         unavailable_other = non_sold_unavailable
+        revenue = None
+        if priced_sold_seats:
+            revenue = {
+                "amount": round(sold_revenue_amount, 2),
+                "minAmount": round(sold_revenue_min, 2),
+                "maxAmount": round(sold_revenue_max, 2),
+                "currency": "AUD",
+                "seatCount": priced_sold_seats,
+                "basis": "Actual sold seats multiplied by their public price level. Holds and blocks are excluded.",
+            }
         breakdown_rows = sorted(
             breakdown.values(),
             key=lambda item: (
@@ -438,6 +518,7 @@ def analyse_session(
         explicit_sold = 0
         effective_sold = tickets_sold
         unavailable_other = 0
+        revenue = None
         breakdown_rows = []
 
     sold_percent = (tickets_sold / total * 100) if total else 0
@@ -456,6 +537,7 @@ def analyse_session(
         "effectiveSoldPercent": effective_sold_percent,
         "unavailablePercent": unavailable_percent,
         "notAvailableSeats": tickets_sold + unavailable_other,
+        "revenueEstimate": revenue,
         "breakdown": breakdown_rows,
         "thresholdAlert": schedule.get("ThresholdAlert"),
         "isSoldOut": bool(schedule.get("IsSoldOut")),
@@ -505,6 +587,10 @@ def analyse_event(value: str) -> dict[str, Any]:
     sold = sum(item["ticketsSold"] for item in sessions)
     effective_sold = sum(item["effectiveSoldSeats"] for item in sessions)
     unavailable = sum(item["unavailableSeats"] for item in sessions)
+    revenue = combine_revenue_estimates(
+        [item.get("revenueEstimate") for item in sessions],
+        "Estimated ticket revenue from TicketSearch seats marked as sold. Holds and blocks are excluded.",
+    )
 
     return {
         "eventId": event_id,
@@ -528,6 +614,7 @@ def analyse_event(value: str) -> dict[str, Any]:
             "soldPercent": (sold / total_seats * 100) if total_seats else 0,
             "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
             "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
+            "revenueEstimate": revenue,
         },
         "sessions": sessions,
     }
@@ -592,6 +679,14 @@ def trybooking_sessions(event_id: int, landing_url: str) -> list[dict[str, str]]
             html_unescape(match.group(1))
             for match in re.finditer(r'data-tb-title="([^"]+)"', partial_html, re.IGNORECASE)
         ]
+        prices = [
+            strip_tags(match.group(1))
+            for match in re.finditer(
+                r'<div[^>]+class="[^"]*\bprice-range\b[^"]*"[^>]*>(.*?)</div>',
+                partial_html,
+                re.IGNORECASE | re.DOTALL,
+            )
+        ]
         hrefs = [
             html_unescape(match.group(1))
             for match in re.finditer(r'href="([^"]+/sessions/\d+/sections\?date=[^"]+)"', partial_html, re.IGNORECASE)
@@ -606,6 +701,7 @@ def trybooking_sessions(event_id: int, landing_url: str) -> list[dict[str, str]]
                     "time": times[index] if index < len(times) else "",
                     "sessionId": session_match.group(1),
                     "href": urljoin(landing_url, href),
+                    "priceText": prices[index] if index < len(prices) else "",
                 }
             )
     return sessions
@@ -649,6 +745,13 @@ def analyse_trybooking_session(
     total = len(seat_tags)
     effective_sold = max(total - available, 0)
     effective_percent = (effective_sold / total * 100) if total else 0
+    price_min, price_max = parse_price_values(session.get("priceText", ""))
+    revenue = revenue_estimate(
+        effective_sold,
+        price_min,
+        price_max,
+        "TryBooking estimate uses seats not currently available to buy multiplied by the public session price. True paid sold seats are not exposed publicly.",
+    )
     breakdown = []
     if unavailable:
         breakdown.append(
@@ -686,6 +789,7 @@ def analyse_trybooking_session(
         "effectiveSoldPercent": effective_percent,
         "unavailablePercent": effective_percent,
         "notAvailableSeats": effective_sold,
+        "revenueEstimate": revenue,
         "breakdown": breakdown,
         "thresholdAlert": None,
         "isSoldOut": bool(total and available == 0),
@@ -708,6 +812,10 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
     sold = sum(item["ticketsSold"] for item in sessions)
     effective_sold = sum(item["effectiveSoldSeats"] for item in sessions)
     unavailable = sum(item["unavailableSeats"] for item in sessions)
+    revenue = combine_revenue_estimates(
+        [item.get("revenueEstimate") for item in sessions],
+        "TryBooking estimate uses seats not currently available to buy multiplied by the public session price. True paid sold seats are not exposed publicly.",
+    )
 
     return {
         "eventId": event_id,
@@ -734,6 +842,7 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
             "soldPercent": (sold / total_seats * 100) if total_seats else 0,
             "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
             "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
+            "revenueEstimate": revenue,
         },
         "sessions": sessions,
     }

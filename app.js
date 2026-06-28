@@ -17,6 +17,11 @@ let currentEvent = null;
 let chartPoints = [];
 
 const formatNumber = new Intl.NumberFormat("en-AU");
+const formatCurrency = new Intl.NumberFormat("en-AU", {
+  style: "currency",
+  currency: "AUD",
+  maximumFractionDigits: 0,
+});
 const formatDate = new Intl.DateTimeFormat("en-AU", {
   weekday: "short",
   day: "2-digit",
@@ -147,6 +152,11 @@ function dailyDeltaLabel(value) {
   return signedNumber(value);
 }
 
+function revenueLabel(estimate) {
+  if (!estimate || estimate.amount === null || estimate.amount === undefined) return "-";
+  return formatCurrency.format(Number(estimate.amount));
+}
+
 function baselineLabel(value) {
   if (!value) return "No daily baseline yet";
   return `Compared with ${formatSnapshotDateTime.format(new Date(value))}`;
@@ -184,6 +194,8 @@ function render(data) {
   setText("#metric-sold", formatNumber.format(summary.ticketsSold));
   setText("#metric-unavailable", formatNumber.format(summary.unavailableSeats));
   setText("#metric-left", formatNumber.format(summary.availableSeats));
+  setText("#metric-revenue", revenueLabel(summary.revenueEstimate));
+  document.querySelector("#metric-revenue").title = summary.revenueEstimate?.basis || "Estimated ticket revenue";
 
   sessionsEl.innerHTML = "";
   data.sessions.forEach((session, index) => {
@@ -224,6 +236,7 @@ function render(data) {
             <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
             <span>${formatNumber.format(session.availableSeats)} available to buy</span>
             <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
+            <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
           </div>
           ${renderBreakdown(session.breakdown)}
         </div>

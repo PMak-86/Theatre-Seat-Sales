@@ -291,7 +291,7 @@ small {
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   padding: 0 36px;
 }
 
@@ -306,7 +306,7 @@ small {
 
 .metrics span {
   display: block;
-  font-size: 24px;
+  font-size: 23px;
   font-weight: 800;
 }
 
