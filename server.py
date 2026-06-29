@@ -373,6 +373,16 @@ def counts_toward_sold_percent(code: str, label: str, is_sold: bool) -> bool:
     return normalized_code in SOLD_PERCENT_HOLD_CODES or normalized_label in SOLD_PERCENT_HOLD_LABELS
 
 
+def is_kill_hide_seat(seat: dict[str, Any]) -> bool:
+    code = str(seat.get("HoldChar") or "").strip().upper()
+    label = str(seat.get("HoldName") or "").strip().lower()
+    return code in {"*K", "K"} or label in {"kill/hide", "kill hide", "kill", "hide"}
+
+
+def is_excluded_from_capacity(seat: dict[str, Any]) -> bool:
+    return bool(seat.get("IsExcludeFromCapacity")) or is_kill_hide_seat(seat)
+
+
 def analyse_session(
     token: str,
     event_id: int,
@@ -422,7 +432,7 @@ def analyse_session(
         mappings.extend(level.get("PLSeatMapObjectMappings") or [])
 
     if mappings:
-        capacity_seats = [seat for seat in mappings if not seat.get("IsExcludeFromCapacity")]
+        capacity_seats = [seat for seat in mappings if not is_excluded_from_capacity(seat)]
         total = len(capacity_seats)
         breakdown: dict[tuple[str, str, str], dict[str, Any]] = {}
         explicit_sold = 0
@@ -435,19 +445,20 @@ def analyse_session(
         priced_sold_seats = 0
 
         for seat in mappings:
-            excluded = bool(seat.get("IsExcludeFromCapacity"))
+            excluded = is_excluded_from_capacity(seat)
             if seat.get("IsSold"):
-                explicit_sold += 1
-                effective_sold += 1
-                price_min, price_max = level_prices.get(int(seat.get("PriceLevelId") or 0), (None, None))
-                if price_min is not None:
-                    high = price_max if price_max is not None else price_min
-                    low = min(price_min, high)
-                    high = max(price_min, high)
-                    sold_revenue_amount += (low + high) / 2
-                    sold_revenue_min += low
-                    sold_revenue_max += high
-                    priced_sold_seats += 1
+                if not excluded:
+                    explicit_sold += 1
+                    effective_sold += 1
+                    price_min, price_max = level_prices.get(int(seat.get("PriceLevelId") or 0), (None, None))
+                    if price_min is not None:
+                        high = price_max if price_max is not None else price_min
+                        low = min(price_min, high)
+                        high = max(price_min, high)
+                        sold_revenue_amount += (low + high) / 2
+                        sold_revenue_min += low
+                        sold_revenue_max += high
+                        priced_sold_seats += 1
                 add_breakdown(breakdown, "SOLD", "Sold seats", "sold", excluded, True)
                 continue
 
@@ -455,10 +466,10 @@ def analyse_session(
                 code = str(seat.get("HoldChar"))
                 label = str(seat.get("HoldName") or "Held seats")
                 include_in_sold_percent = counts_toward_sold_percent(code, label, False)
-                if include_in_sold_percent:
+                if include_in_sold_percent and not excluded:
                     effective_sold += 1
-                non_sold_unavailable += 1
                 if not excluded:
+                    non_sold_unavailable += 1
                     non_sold_unavailable_in_capacity += 1
                 add_breakdown(
                     breakdown,
@@ -471,22 +482,22 @@ def analyse_session(
                 continue
 
             if seat.get("IsBlock"):
-                non_sold_unavailable += 1
                 if not excluded:
+                    non_sold_unavailable += 1
                     non_sold_unavailable_in_capacity += 1
                 add_breakdown(breakdown, "BLOCK", "Blocked seats", "blocked", excluded)
                 continue
 
             if seat.get("IsSDSeat"):
-                non_sold_unavailable += 1
                 if not excluded:
+                    non_sold_unavailable += 1
                     non_sold_unavailable_in_capacity += 1
                 add_breakdown(breakdown, "SD", "Special disabled seats", "special", excluded)
                 continue
 
             if seat.get("IsSelected"):
-                non_sold_unavailable += 1
                 if not excluded:
+                    non_sold_unavailable += 1
                     non_sold_unavailable_in_capacity += 1
                 add_breakdown(breakdown, "SELECTED", "Temporarily selected", "selected", excluded)
 
