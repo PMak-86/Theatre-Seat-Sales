@@ -189,6 +189,8 @@ function render(data) {
   setText("#event-dates", formatDateRange(data.dateRange));
   setText("#overall-percent", percent(summary.effectiveSoldPercent));
   document.querySelector("#overall-ring").style.setProperty("--sold", `${Math.min(summary.effectiveSoldPercent, 100)}%`);
+  setText("#overall-sold-today", dailyDeltaLabel(summary.salesSinceDailySnapshot));
+  document.querySelector("#overall-sold-today").title = baselineLabel(summary.dailySnapshotCapturedAt);
   setText("#metric-performances", formatNumber.format(summary.performances));
   setText("#metric-total", formatNumber.format(summary.totalSeats));
   setText("#metric-sold", formatNumber.format(summary.ticketsSold));

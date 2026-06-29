@@ -197,7 +197,7 @@ button:disabled {
 
 .show-header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 132px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 22px;
   align-items: center;
   padding: 42px 56px 28px;
@@ -264,6 +264,29 @@ h2 {
   display: grid;
   place-items: center;
   background: conic-gradient(var(--navy) var(--sold), #edf1f4 0);
+}
+
+.overall-panel {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.sold-today-ticker {
+  min-width: 118px;
+  padding: 13px 14px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #f8fafb;
+}
+
+.sold-today-ticker span {
+  display: block;
+  color: var(--navy);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .ring-inner {
@@ -728,6 +751,14 @@ td.numeric {
     height: 112px;
   }
 
+  .overall-panel {
+    justify-content: flex-start;
+  }
+
+  .sold-today-ticker {
+    min-width: 112px;
+  }
+
   .ring-inner {
     width: 86px;
     height: 86px;
@@ -948,6 +979,17 @@ td.numeric {
 
   .show-header {
     padding: 18px 14px;
+  }
+
+  .overall-panel {
+    width: 100%;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .sold-today-ticker {
+    min-width: 0;
+    flex: 1;
   }
 
   h2 {
