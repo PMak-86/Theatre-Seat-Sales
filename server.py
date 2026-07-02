@@ -229,6 +229,46 @@ def date_range(sessions: list[dict[str, Any]]) -> dict[str, str | None]:
     return {"start": min(dates), "end": max(dates)}
 
 
+def parse_event_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        offset = sydney_offset_hours(parsed.replace(tzinfo=timezone.utc))
+        parsed = parsed.replace(tzinfo=timezone(timedelta(hours=offset)))
+    return parsed.astimezone(timezone.utc)
+
+
+def recompute_summary(data: dict[str, Any]) -> None:
+    sessions = data.get("sessions") or []
+    total_seats = sum(int(item.get("totalSeats") or 0) for item in sessions)
+    available = sum(int(item.get("availableSeats") or 0) for item in sessions)
+    sold = sum(int(item.get("ticketsSold") or 0) for item in sessions)
+    effective_sold = sum(int(item.get("effectiveSoldSeats") or 0) for item in sessions)
+    unavailable = sum(int(item.get("unavailableSeats") or 0) for item in sessions)
+    revenue = combine_revenue_estimates(
+        [item.get("revenueEstimate") for item in sessions],
+        "Estimated ticket revenue from available performance revenue estimates.",
+    )
+    data["dateRange"] = date_range(sessions)
+    data["summary"] = {
+        **(data.get("summary") or {}),
+        "performances": len(sessions),
+        "totalSeats": total_seats,
+        "availableSeats": available,
+        "ticketsSold": sold,
+        "effectiveSoldSeats": effective_sold,
+        "unavailableSeats": unavailable,
+        "soldPercent": (sold / total_seats * 100) if total_seats else 0,
+        "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
+        "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
+        "revenueEstimate": revenue,
+    }
+
+
 def canonical_event_url(mask_url: str, event_id: int) -> str:
     return f"{mask_url}/sales/salesevent/{event_id}"
 
@@ -945,6 +985,89 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
     }
 
 
+def final_snapshot_schedule_ids(tracked_event_id: str) -> set[int]:
+    rows = supabase_request(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked_event_id}"
+        "&select=schedule_id,event_snapshots!inner(source)"
+        "&event_snapshots.source=eq.final"
+    )
+    return {int(row["schedule_id"]) for row in rows or []}
+
+
+def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
+    snapshot = row.get("event_snapshots") or {}
+    return {
+        "scheduleId": int(row["schedule_id"]),
+        "dateTime": row.get("show_datetime"),
+        "description": row.get("description"),
+        "totalSeats": int(row.get("total_seats") or 0),
+        "availableSeats": int(row.get("available") or 0),
+        "ticketsSold": int(row.get("actual_sold") or 0),
+        "effectiveSoldSeats": int(row.get("effective_sold") or 0),
+        "unavailableSeats": int(row.get("unavailable") or 0),
+        "soldPercent": float(row.get("actual_sold_percent") or 0),
+        "effectiveSoldPercent": float(row.get("effective_sold_percent") or 0),
+        "unavailablePercent": float(row.get("unavailable_percent") or 0),
+        "notAvailableSeats": int(row.get("actual_sold") or 0) + int(row.get("unavailable") or 0),
+        "breakdown": row.get("breakdown") or [],
+        "isFinal": True,
+        "finalSnapshotCapturedAt": snapshot.get("captured_at"),
+    }
+
+
+def attach_finalized_sessions(data: dict[str, Any]) -> None:
+    if not storage_enabled():
+        return
+
+    tracked = supabase_request(
+        "tracked_events"
+        f"?event_url=eq.{quote(data['eventUrl'], safe='')}"
+        "&select=id"
+        "&order=last_seen_at.desc"
+        "&limit=1"
+    )
+    if not tracked:
+        return
+
+    rows = supabase_request(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked[0]['id']}"
+        "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
+        "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,"
+        "breakdown,event_snapshots!inner(source,captured_at)"
+        "&event_snapshots.source=eq.final"
+        "&order=show_datetime.asc"
+    )
+    if not rows:
+        return
+
+    now_utc = datetime.now(timezone.utc)
+    final_by_schedule: dict[int, dict[str, Any]] = {}
+    for row in rows:
+        show_time = parse_event_datetime(row.get("show_datetime"))
+        if show_time and show_time <= now_utc:
+            schedule_id = int(row["schedule_id"])
+            session = performance_snapshot_to_session(row)
+            existing = final_by_schedule.get(schedule_id)
+            existing_at = parse_event_datetime(existing.get("finalSnapshotCapturedAt")) if existing else None
+            session_at = parse_event_datetime(session.get("finalSnapshotCapturedAt"))
+            if existing is None or (session_at and (existing_at is None or session_at > existing_at)):
+                final_by_schedule[schedule_id] = session
+
+    if not final_by_schedule:
+        return
+
+    live_by_schedule = {
+        int(session["scheduleId"]): session
+        for session in data.get("sessions", [])
+        if session.get("scheduleId") is not None
+    }
+    live_by_schedule.update(final_by_schedule)
+    data["sessions"] = sorted(live_by_schedule.values(), key=lambda item: item.get("dateTime") or "")
+    recompute_summary(data)
+
+
 def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
     for session in data.get("sessions", []):
         session["salesSinceDailySnapshot"] = None
@@ -1021,7 +1144,7 @@ def tracked_events() -> list[dict[str, Any]]:
     if not storage_enabled():
         return []
     return supabase_request(
-        "tracked_events?is_active=eq.true&select=id,event_url,event_name,last_seen_at&order=last_seen_at.desc"
+        "tracked_events?is_active=eq.true&select=id,event_url,event_name,date_end,last_seen_at&order=last_seen_at.desc"
     )
 
 
@@ -1046,6 +1169,65 @@ def run_daily_snapshots() -> dict[str, Any]:
                 "error": str(exc),
             })
     return {"trackedEvents": len(events), "results": results}
+
+
+def run_final_snapshots(window_minutes: int = 20) -> dict[str, Any]:
+    events = tracked_events()
+    now_utc = datetime.now(timezone.utc)
+    window_end = now_utc + timedelta(minutes=window_minutes)
+    results = []
+
+    for event in events:
+        try:
+            event_end = parse_event_datetime(event.get("date_end"))
+            if event_end and event_end < now_utc - timedelta(days=1):
+                results.append({
+                    "eventUrl": event["event_url"],
+                    "eventName": event.get("event_name"),
+                    "ok": True,
+                    "skipped": "event completed",
+                })
+                continue
+
+            already_final = final_snapshot_schedule_ids(event["id"])
+            data = analyse_any_event(event["event_url"])
+            due_sessions = []
+            for session in data.get("sessions", []):
+                schedule_id = int(session["scheduleId"])
+                show_time = parse_event_datetime(session.get("dateTime"))
+                if (
+                    show_time
+                    and now_utc <= show_time <= window_end
+                    and schedule_id not in already_final
+                ):
+                    due_sessions.append(schedule_id)
+
+            if due_sessions:
+                stored = store_snapshot(data, "final")
+                results.append({
+                    "eventUrl": event["event_url"],
+                    "eventName": data.get("eventName"),
+                    "ok": True,
+                    "finalizedSchedules": due_sessions,
+                    "snapshot": stored,
+                })
+            else:
+                results.append({
+                    "eventUrl": event["event_url"],
+                    "eventName": data.get("eventName"),
+                    "ok": True,
+                    "finalizedSchedules": [],
+                    "snapshot": None,
+                })
+        except Exception as exc:
+            results.append({
+                "eventUrl": event["event_url"],
+                "eventName": event.get("event_name"),
+                "ok": False,
+                "error": str(exc),
+            })
+
+    return {"trackedEvents": len(events), "windowMinutes": window_minutes, "results": results}
 
 
 def event_history(event_id: int | None = None, event_url: str | None = None) -> dict[str, Any]:
@@ -1202,6 +1384,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/snapshot/daily":
             self.handle_daily_snapshot(parsed)
             return
+        if parsed.path == "/api/snapshot/finals":
+            self.handle_final_snapshot(parsed)
+            return
         if parsed.path == "/api/history":
             self.handle_history(parsed)
             return
@@ -1214,6 +1399,10 @@ class Handler(BaseHTTPRequestHandler):
         value = parse_qs(parsed.query).get("input", [""])[0]
         try:
             payload = analyse_any_event(unquote(value))
+            try:
+                attach_finalized_sessions(payload)
+            except StorageError as exc:
+                payload["snapshotWarning"] = str(exc)
             try:
                 attach_daily_performance_deltas(payload)
             except StorageError as exc:
@@ -1237,6 +1426,21 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             self.send_json(200, run_daily_snapshots())
+        except StorageError as exc:
+            self.send_json(500, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Unexpected error: {exc}"})
+
+    def handle_final_snapshot(self, parsed: Any) -> None:
+        params = parse_qs(parsed.query)
+        secret = params.get("secret", [""])[0] or self.headers.get("X-Snapshot-Secret", "")
+        if SNAPSHOT_SECRET and secret != SNAPSHOT_SECRET:
+            self.send_json(403, {"error": "Invalid snapshot secret."})
+            return
+        try:
+            window_raw = params.get("windowMinutes", ["20"])[0]
+            window_minutes = max(1, min(int(window_raw), 60))
+            self.send_json(200, run_final_snapshots(window_minutes))
         except StorageError as exc:
             self.send_json(500, {"error": str(exc)})
         except Exception as exc:

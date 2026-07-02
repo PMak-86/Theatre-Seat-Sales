@@ -31,6 +31,8 @@ The server reads Render's `PORT` environment variable automatically.
 
 The app stores a snapshot each time an event is analysed, then a GitHub Actions workflow calls the daily snapshot endpoint once per day for every tracked event.
 
+A second workflow calls the final snapshot endpoint every 5 minutes. The app only stores a final snapshot when a tracked performance is within the pre-show window, so completed performances can keep their last pre-show figures even after the ticketing provider stops returning them.
+
 Render environment variables:
 
 - `SUPABASE_URL`
