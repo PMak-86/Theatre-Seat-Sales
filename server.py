@@ -4,6 +4,7 @@ import json
 import os
 import re
 import uuid
+import zlib
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -249,6 +250,7 @@ def recompute_summary(data: dict[str, Any]) -> None:
     sold = sum(int(item.get("ticketsSold") or 0) for item in sessions)
     effective_sold = sum(int(item.get("effectiveSoldSeats") or 0) for item in sessions)
     unavailable = sum(int(item.get("unavailableSeats") or 0) for item in sessions)
+    capacity_unknown = any(item.get("capacityUnknown") for item in sessions)
     revenue = combine_revenue_estimates(
         [item.get("revenueEstimate") for item in sessions],
         "Estimated ticket revenue from available performance revenue estimates.",
@@ -266,6 +268,7 @@ def recompute_summary(data: dict[str, Any]) -> None:
         "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
         "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
         "revenueEstimate": revenue,
+        "capacityUnknown": capacity_unknown,
     }
 
 
@@ -379,6 +382,88 @@ def parse_trybooking_input(value: str) -> int | None:
         return None
     match = re.search(r"/events/(?:landing/)?(\d+)", parsed.path, re.IGNORECASE)
     return int(match.group(1)) if match else None
+
+
+def synthetic_trybooking_schedule_id(event_id: int, date_value: str, time_value: str) -> int:
+    raw = f"trybooking:{event_id}:{date_value}:{time_value}".encode("utf-8")
+    return zlib.crc32(raw) & 0x7FFFFFFF
+
+
+def trybooking_data_int(html: str, name: str) -> int | None:
+    match = re.search(rf'data-{re.escape(name)}="(-?\d+)"', html, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def trybooking_general_admission_session(
+    event_id: int,
+    session: dict[str, str],
+    timezone_offset: str,
+    availability: int | None,
+    is_sold_out: bool,
+    fallback_capacity: int = 0,
+) -> dict[str, Any]:
+    available = max(int(availability or 0), 0)
+    total = fallback_capacity if is_sold_out and fallback_capacity else 0
+    capacity_unknown = total == 0
+    effective_sold = total if is_sold_out and total else 0
+    effective_percent = 100 if is_sold_out and total else 0
+    price_min, price_max = parse_price_values(session.get("priceText", ""))
+    basis = (
+        "TryBooking marked this general-admission performance as sold out. "
+        "The exact paid ticket count is only available when a previous snapshot supplied capacity."
+        if is_sold_out
+        else "TryBooking general-admission page exposes remaining availability but not total capacity, so sold seats cannot be calculated from the public page alone."
+    )
+    revenue = revenue_estimate(effective_sold, price_min, price_max, basis)
+    breakdown = []
+    if is_sold_out:
+        breakdown.append(
+            {
+                "code": "TB_SOLD_OUT",
+                "label": "TryBooking sold out performance",
+                "kind": "sold-out",
+                "count": effective_sold,
+                "excludedFromCapacity": 0,
+                "countsTowardSoldPercent": True,
+            }
+        )
+    else:
+        breakdown.append(
+            {
+                "code": "TB_GA_AVAILABLE",
+                "label": "TryBooking general admission remaining availability",
+                "kind": "available",
+                "count": available,
+                "excludedFromCapacity": 0,
+                "countsTowardSoldPercent": False,
+            }
+        )
+
+    return {
+        "scheduleId": int(session["sessionId"]),
+        "dateTime": trybooking_session_datetime(session["date"], session.get("time", ""), timezone_offset),
+        "description": session.get("time", ""),
+        "totalSeats": total,
+        "availableSeats": 0 if is_sold_out else available,
+        "ticketsSold": effective_sold,
+        "effectiveSoldSeats": effective_sold,
+        "unavailableSeats": 0,
+        "soldPercent": effective_percent,
+        "effectiveSoldPercent": effective_percent,
+        "unavailablePercent": effective_percent,
+        "notAvailableSeats": effective_sold,
+        "revenueEstimate": revenue,
+        "breakdown": breakdown,
+        "thresholdAlert": None,
+        "isSoldOut": is_sold_out,
+        "capacityUnknown": capacity_unknown,
+        "statusLabel": "Sold out" if is_sold_out else "General admission availability only",
+    }
 
 
 def add_breakdown(
@@ -638,6 +723,7 @@ def analyse_event(value: str) -> dict[str, Any]:
     sold = sum(item["ticketsSold"] for item in sessions)
     effective_sold = sum(item["effectiveSoldSeats"] for item in sessions)
     unavailable = sum(item["unavailableSeats"] for item in sessions)
+    capacity_unknown = any(item.get("capacityUnknown") for item in sessions)
     revenue = combine_revenue_estimates(
         [item.get("revenueEstimate") for item in sessions],
         "Estimated ticket revenue from TicketSearch seats marked as sold. Holds and blocks are excluded.",
@@ -666,6 +752,7 @@ def analyse_event(value: str) -> dict[str, Any]:
             "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
             "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
             "revenueEstimate": revenue,
+            "capacityUnknown": capacity_unknown,
         },
         "sessions": sessions,
     }
@@ -726,33 +813,44 @@ def trybooking_sessions(event_id: int, landing_url: str) -> list[dict[str, str]]
             continue
         partial_url = f"{landing_url}/sessions-partial?date={quote(event_date)}"
         partial_html = request_text(partial_url, referer=landing_url)
-        times = [
-            html_unescape(match.group(1))
-            for match in re.finditer(r'data-tb-title="([^"]+)"', partial_html, re.IGNORECASE)
-        ]
-        prices = [
-            strip_tags(match.group(1))
-            for match in re.finditer(
+        rows = re.findall(
+            r'<div class="tryb-row[^"]*list-group-item[^"]*">(.*?)(?=<div class="tryb-row|\Z)',
+            partial_html,
+            re.IGNORECASE | re.DOTALL,
+        )
+        for row in rows:
+            time_match = re.search(r'data-tb-title="([^"]+)"', row, re.IGNORECASE)
+            if not time_match:
+                continue
+            time_value = html_unescape(time_match.group(1))
+            price_match = re.search(
                 r'<div[^>]+class="[^"]*\bprice-range\b[^"]*"[^>]*>(.*?)</div>',
-                partial_html,
+                row,
                 re.IGNORECASE | re.DOTALL,
             )
-        ]
-        hrefs = [
-            html_unescape(match.group(1))
-            for match in re.finditer(r'href="([^"]+/sessions/\d+/sections\?date=[^"]+)"', partial_html, re.IGNORECASE)
-        ]
-        for index, href in enumerate(hrefs):
+            price_text = strip_tags(price_match.group(1)) if price_match else ""
+            status_match = re.search(
+                r'<div[^>]+class="[^"]*\blegend-item\b[^"]*"[^>]*>(.*?)</div>',
+                row,
+                re.IGNORECASE | re.DOTALL,
+            )
+            status = strip_tags(status_match.group(1)).lower() if status_match else ""
+            href_match = re.search(r'href="([^"]+/sessions/\d+/sections\?date=[^"]+)"', row, re.IGNORECASE)
+            href = html_unescape(href_match.group(1)) if href_match else ""
             session_match = re.search(r"/sessions/(\d+)/", href)
-            if not session_match:
+            if href and not session_match:
                 continue
             sessions.append(
                 {
                     "date": event_date,
-                    "time": times[index] if index < len(times) else "",
-                    "sessionId": session_match.group(1),
-                    "href": urljoin(landing_url, href),
-                    "priceText": prices[index] if index < len(prices) else "",
+                    "time": time_value,
+                    "sessionId": session_match.group(1)
+                    if session_match
+                    else str(synthetic_trybooking_schedule_id(event_id, event_date, time_value)),
+                    "href": urljoin(landing_url, href) if href else "",
+                    "priceText": price_text,
+                    "status": status,
+                    "isSoldOut": str("sold out" in status),
                 }
             )
     return sessions
@@ -762,7 +860,18 @@ def analyse_trybooking_session(
     event_id: int,
     session: dict[str, str],
     timezone_offset: str,
+    fallback_capacity: int = 0,
 ) -> dict[str, Any]:
+    if not session.get("href"):
+        return trybooking_general_admission_session(
+            event_id,
+            session,
+            timezone_offset,
+            0,
+            "sold out" in session.get("status", "").lower() or session.get("isSoldOut") == "True",
+            fallback_capacity,
+        )
+
     section_html = request_text(session["href"], referer=canonical_trybooking_url(event_id))
     section_match = re.search(r'data-section-id="(\d+)"', section_html, re.IGNORECASE)
     if not section_match:
@@ -792,6 +901,20 @@ def analyse_trybooking_session(
             unavailable += 1
         else:
             unclassified += 1
+
+    if not seat_tags:
+        availability = trybooking_data_int(section_html, "section-availability")
+        if availability is None:
+            availability = trybooking_data_int(section_html, "session-availability")
+        if availability is not None:
+            return trybooking_general_admission_session(
+                event_id,
+                session,
+                timezone_offset,
+                availability,
+                availability <= 0 or "sold out" in session.get("status", "").lower(),
+                fallback_capacity,
+            )
 
     total = len(seat_tags)
     effective_sold = max(total - available, 0)
@@ -852,10 +975,24 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
     landing_html = request_text(landing_url)
     metadata = trybooking_event_metadata(event_id, landing_html)
     timezone_offset = trybooking_timezone_offset(landing_html)
-    sessions = [
-        analyse_trybooking_session(event_id, session, timezone_offset)
-        for session in trybooking_sessions(event_id, landing_url)
-    ]
+    raw_sessions = trybooking_sessions(event_id, landing_url)
+    linked_sessions: dict[int, dict[str, Any]] = {}
+    capacity_hint = 0
+    for session in raw_sessions:
+        if not session.get("href"):
+            continue
+        analysed = analyse_trybooking_session(event_id, session, timezone_offset)
+        linked_sessions[int(analysed["scheduleId"])] = analysed
+        if not analysed.get("capacityUnknown"):
+            capacity_hint = max(capacity_hint, int(analysed.get("totalSeats") or 0))
+
+    sessions = []
+    for session in raw_sessions:
+        schedule_id = int(session["sessionId"])
+        if schedule_id in linked_sessions:
+            sessions.append(linked_sessions[schedule_id])
+        else:
+            sessions.append(analyse_trybooking_session(event_id, session, timezone_offset, capacity_hint))
     sessions.sort(key=lambda item: item.get("dateTime") or "")
 
     total_seats = sum(item["totalSeats"] for item in sessions)
@@ -863,6 +1000,7 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
     sold = sum(item["ticketsSold"] for item in sessions)
     effective_sold = sum(item["effectiveSoldSeats"] for item in sessions)
     unavailable = sum(item["unavailableSeats"] for item in sessions)
+    capacity_unknown = any(item.get("capacityUnknown") for item in sessions)
     revenue = combine_revenue_estimates(
         [item.get("revenueEstimate") for item in sessions],
         "TryBooking estimate uses seats not currently available to buy multiplied by the public session price. True paid sold seats are not exposed publicly.",
@@ -894,6 +1032,7 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
             "effectiveSoldPercent": (effective_sold / total_seats * 100) if total_seats else 0,
             "unavailablePercent": ((sold + unavailable) / total_seats * 100) if total_seats else 0,
             "revenueEstimate": revenue,
+            "capacityUnknown": capacity_unknown,
         },
         "sessions": sessions,
     }

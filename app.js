@@ -157,6 +157,18 @@ function revenueLabel(estimate) {
   return formatCurrency.format(Number(estimate.amount));
 }
 
+function soldCellLabel(session) {
+  if (session.capacityUnknown && session.isSoldOut) return "Sold out";
+  if (session.capacityUnknown) return `${formatNumber.format(session.availableSeats)} available`;
+  return `${formatNumber.format(session.ticketsSold)} / ${formatNumber.format(session.totalSeats)}`;
+}
+
+function percentCellLabel(session) {
+  if (session.capacityUnknown && session.isSoldOut) return "Sold out";
+  if (session.capacityUnknown) return "Capacity unknown";
+  return percent(session.effectiveSoldPercent);
+}
+
 function baselineLabel(value) {
   if (!value) return "No daily baseline yet";
   return `Compared with ${formatSnapshotDateTime.format(new Date(value))}`;
@@ -187,12 +199,12 @@ function render(data) {
   setText("#event-name", data.eventName || `Event ${data.eventId}`);
   setText("#event-location", data.venue || data.location || "Location not supplied");
   setText("#event-dates", formatDateRange(data.dateRange));
-  setText("#overall-percent", percent(summary.effectiveSoldPercent));
-  document.querySelector("#overall-ring").style.setProperty("--sold", `${Math.min(summary.effectiveSoldPercent, 100)}%`);
+  setText("#overall-percent", summary.capacityUnknown ? "N/A" : percent(summary.effectiveSoldPercent));
+  document.querySelector("#overall-ring").style.setProperty("--sold", `${summary.capacityUnknown ? 0 : Math.min(summary.effectiveSoldPercent, 100)}%`);
   setText("#overall-sold-today", dailyDeltaLabel(summary.salesSinceDailySnapshot));
   document.querySelector("#overall-sold-today").title = baselineLabel(summary.dailySnapshotCapturedAt);
   setText("#metric-performances", formatNumber.format(summary.performances));
-  setText("#metric-total", formatNumber.format(summary.totalSeats));
+  setText("#metric-total", summary.capacityUnknown ? "Unknown" : formatNumber.format(summary.totalSeats));
   setText("#metric-sold", formatNumber.format(summary.ticketsSold));
   setText("#metric-unavailable", formatNumber.format(summary.unavailableSeats));
   setText("#metric-left", formatNumber.format(summary.availableSeats));
@@ -209,7 +221,7 @@ function render(data) {
       <td><button class="expand-button" type="button" aria-expanded="false" aria-controls="detail-${index}">+</button></td>
       <td data-label="Date">${when ? formatDate.format(when) : ""}</td>
       <td data-label="Time">${when ? formatTime.format(when) : ""}</td>
-      <td data-label="Sold">${formatNumber.format(session.ticketsSold)} / ${formatNumber.format(session.totalSeats)}</td>
+      <td data-label="Sold">${soldCellLabel(session)}</td>
       <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
       <td data-label="Available">${formatNumber.format(session.availableSeats)}</td>
       <td data-label="Sold today" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
@@ -217,8 +229,8 @@ function render(data) {
       </td>
       <td data-label="% sold">
         <div class="bar">
-          <span>${percent(session.effectiveSoldPercent)}</span>
-          <span class="track"><span class="fill" style="width: ${progressWidth(session.effectiveSoldPercent)}%"></span></span>
+          <span>${percentCellLabel(session)}</span>
+          <span class="track"><span class="fill" style="width: ${session.capacityUnknown ? 0 : progressWidth(session.effectiveSoldPercent)}%"></span></span>
         </div>
       </td>
     `;
@@ -237,6 +249,7 @@ function render(data) {
             <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sold %</span>
             <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
             <span>${formatNumber.format(session.availableSeats)} available to buy</span>
+            ${session.capacityUnknown ? `<span>${escapeHtml(session.statusLabel || "Capacity unknown")}</span>` : ""}
             <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
             <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
           </div>
