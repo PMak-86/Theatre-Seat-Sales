@@ -602,7 +602,6 @@ def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None =
         "legend": [
             {"status": "available", "label": "Available"},
             {"status": "sold", "label": "Sold"},
-            {"status": "sold-equivalent", "label": "Sold % hold"},
             {"status": "hold", "label": "Unavailable"},
             {"status": "excluded", "label": "Hidden/kill"},
         ],
