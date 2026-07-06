@@ -1151,7 +1151,28 @@ def analyse_any_event(value: str) -> dict[str, Any]:
     return data
 
 
-def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, Any] | None:
+def performance_snapshot_details(session: dict[str, Any], include_seat_map: bool = False) -> Any:
+    details: dict[str, Any] = {"items": session.get("breakdown") or []}
+    if include_seat_map and session.get("seatMap"):
+        details["seatMap"] = session.get("seatMap")
+    return details
+
+
+def parse_performance_snapshot_details(value: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+    if isinstance(value, dict):
+        items = value.get("items") if isinstance(value.get("items"), list) else []
+        seat_map = value.get("seatMap") if isinstance(value.get("seatMap"), dict) else None
+        return items, seat_map
+    if isinstance(value, list):
+        return value, None
+    return [], None
+
+
+def store_snapshot(
+    data: dict[str, Any],
+    source: str = "search",
+    schedule_ids: set[int] | None = None,
+) -> dict[str, Any] | None:
     if not storage_enabled():
         return None
 
@@ -1198,6 +1219,12 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
         "return=representation",
     )
     snapshot = snapshot_rows[0]
+    sessions_to_store = [
+        session
+        for session in data["sessions"]
+        if schedule_ids is None or int(session["scheduleId"]) in schedule_ids
+    ]
+    include_seat_map = source == "final"
     performance_payload = [
         {
             "event_snapshot_id": snapshot["id"],
@@ -1213,9 +1240,9 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
             "actual_sold_percent": session["soldPercent"],
             "effective_sold_percent": session["effectiveSoldPercent"],
             "unavailable_percent": session["unavailablePercent"],
-            "breakdown": session.get("breakdown") or [],
+            "breakdown": performance_snapshot_details(session, include_seat_map),
         }
-        for session in data["sessions"]
+        for session in sessions_to_store
     ]
     if performance_payload:
         supabase_request("performance_snapshots", "POST", performance_payload)
@@ -1227,19 +1254,30 @@ def store_snapshot(data: dict[str, Any], source: str = "search") -> dict[str, An
     }
 
 
-def final_snapshot_schedule_ids(tracked_event_id: str) -> set[int]:
+def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 20) -> set[int]:
     rows = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
-        "&select=schedule_id,event_snapshots!inner(source)"
+        "&select=schedule_id,show_datetime,event_snapshots!inner(source,captured_at)"
         "&event_snapshots.source=eq.final"
     )
-    return {int(row["schedule_id"]) for row in rows or []}
+    finalized: set[int] = set()
+    for row in rows or []:
+        show_time = parse_event_datetime(row.get("show_datetime"))
+        snapshot = row.get("event_snapshots") or {}
+        captured_at = parse_event_datetime(snapshot.get("captured_at"))
+        if not show_time or not captured_at:
+            continue
+        minutes_before_show = (show_time - captured_at).total_seconds() / 60
+        if 0 <= minutes_before_show <= window_minutes:
+            finalized.add(int(row["schedule_id"]))
+    return finalized
 
 
 def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = row.get("event_snapshots") or {}
-    return {
+    breakdown, seat_map = parse_performance_snapshot_details(row.get("breakdown"))
+    session = {
         "scheduleId": int(row["schedule_id"]),
         "dateTime": row.get("show_datetime"),
         "description": row.get("description"),
@@ -1252,10 +1290,13 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
         "effectiveSoldPercent": float(row.get("effective_sold_percent") or 0),
         "unavailablePercent": float(row.get("unavailable_percent") or 0),
         "notAvailableSeats": int(row.get("actual_sold") or 0) + int(row.get("unavailable") or 0),
-        "breakdown": row.get("breakdown") or [],
+        "breakdown": breakdown,
         "isFinal": True,
         "finalSnapshotCapturedAt": snapshot.get("captured_at"),
     }
+    if seat_map:
+        session["seatMap"] = seat_map
+    return session
 
 
 def attach_finalized_sessions(data: dict[str, Any]) -> None:
@@ -1431,7 +1472,7 @@ def run_final_snapshots(window_minutes: int = 20) -> dict[str, Any]:
                 })
                 continue
 
-            already_final = final_snapshot_schedule_ids(event["id"])
+            already_final = final_snapshot_schedule_ids(event["id"], window_minutes)
             data = analyse_any_event(event["event_url"])
             due_sessions = []
             for session in data.get("sessions", []):
@@ -1445,7 +1486,7 @@ def run_final_snapshots(window_minutes: int = 20) -> dict[str, Any]:
                     due_sessions.append(schedule_id)
 
             if due_sessions:
-                stored = store_snapshot(data, "final")
+                stored = store_snapshot(data, "final", set(due_sessions))
                 results.append({
                     "eventUrl": event["event_url"],
                     "eventName": data.get("eventName"),
