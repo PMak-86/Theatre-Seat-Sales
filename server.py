@@ -568,21 +568,47 @@ def is_red_tree_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) ->
 
 
 def art_house_seat_position(index: int) -> dict[str, Any] | None:
-    sections = [
-        ("Stalls", ["T", "S", "R", "Q", "P", "N", "M", "L", "K", "J"], [23, 23, 24, 24, 24, 24, 24, 24, 24, 24], 1),
-        ("Stalls", ["H", "G", "F", "E", "D", "C", "B", "A"], [20, 25, 25, 25, 25, 25, 25, 25], 239),
-        ("Balcony 2", ["A", "B", "C", "D", "E", "F"], [5, 6, 6, 6, 6, 6], 434),
-        ("Balcony 1", ["A", "B", "C", "D", "E", "F"], [5, 6, 6, 6, 6, 6], 469),
-    ]
     api_seat = index + 1
-    for section, rows, lengths, start in sections:
+
+    segments = [
+        ("Stalls", "T", 23, 1, 1),
+        ("Stalls", "S", 23, 24, 1),
+        ("Stalls", "R", 24, 47, 1),
+        ("Stalls", "Q", 24, 71, 1),
+        ("Stalls", "P", 24, 95, 1),
+        ("Stalls", "N", 24, 119, 1),
+        ("Stalls", "M", 24, 143, 1),
+        ("Stalls", "L", 9, 167, 1),
+        ("Stalls", "H", 20, 176, 1),
+        ("Stalls", "L", 15, 196, 10),
+        ("Stalls", "K", 24, 211, 1),
+        ("Stalls", "J", 24, 235, 1),
+        ("Stalls", "G", 25, 259, 1),
+        ("Stalls", "F", 25, 284, 1),
+        ("Stalls", "E", 25, 309, 1),
+        ("Stalls", "D", 25, 334, 1),
+        ("Stalls", "C", 25, 359, 1),
+        ("Stalls", "B", 25, 384, 1),
+        ("Stalls", "A", 25, 409, 1),
+        ("Balcony 2", "A", 5, 434, 1),
+        ("Balcony 2", "B", 6, 439, 1),
+        ("Balcony 2", "C", 6, 445, 1),
+        ("Balcony 2", "D", 6, 451, 1),
+        ("Balcony 2", "E", 6, 457, 1),
+        ("Balcony 2", "F", 6, 463, 1),
+        ("Balcony 1", "A", 5, 469, 1),
+        ("Balcony 1", "B", 6, 474, 1),
+        ("Balcony 1", "C", 6, 480, 1),
+        ("Balcony 1", "D", 6, 486, 1),
+        ("Balcony 1", "E", 6, 492, 1),
+        ("Balcony 1", "F", 6, 498, 1),
+    ]
+    for section, row, length, start, first_seat in segments:
         offset = api_seat - start
         if offset < 0:
             continue
-        for row, length in zip(rows, lengths):
-            if offset < length:
-                return {"section": section, "row": row, "seatNumber": offset + 1}
-            offset -= length
+        if offset < length:
+            return {"section": section, "row": row, "seatNumber": first_seat + offset}
     return None
 
 
