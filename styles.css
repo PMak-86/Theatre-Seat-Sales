@@ -716,18 +716,9 @@ td.numeric {
 }
 
 .red-tree-seating-area {
-  position: relative;
   display: grid;
-  gap: 7px;
-}
-
-.red-tree-row {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: 20px minmax(42px, 0.7fr) minmax(68px, 1.1fr) minmax(52px, 0.85fr) 20px;
-  column-gap: clamp(30px, 6vw, 54px);
-  row-gap: 6px;
+  grid-template-columns: 20px minmax(42px, 0.74fr) clamp(22px, 5vw, 38px) minmax(72px, 1.15fr) clamp(22px, 5vw, 38px) minmax(52px, 0.88fr) 20px;
+  gap: 7px 8px;
   align-items: center;
 }
 
@@ -756,27 +747,16 @@ td.numeric {
 }
 
 .red-tree-long-aisle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  z-index: 0;
   display: grid;
   place-items: center;
-  width: clamp(24px, 4.8vw, 42px);
+  grid-row: 1 / -1;
+  align-self: stretch;
   background: #f5a7aa;
   color: #071f3d;
   writing-mode: vertical-rl;
   text-orientation: mixed;
   font-size: 10px;
   text-transform: uppercase;
-}
-
-.red-tree-long-aisle-left {
-  left: calc(20px + 24%);
-}
-
-.red-tree-long-aisle-right {
-  right: calc(20px + 23%);
 }
 
 .seat-dot {

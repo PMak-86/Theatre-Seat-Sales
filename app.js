@@ -292,7 +292,7 @@ function renderRedTreeSeatMap(seatMap) {
   );
   const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
   const rowMarkup = rows
-    .map((row) => {
+    .map((row, rowIndex) => {
       const leftSeats = Array.from({ length: 5 }, (_, index) => {
         const seatNumber = index + 1;
         return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
@@ -305,14 +305,13 @@ function renderRedTreeSeatMap(seatMap) {
         const seatNumber = index + 14;
         return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
       }).join("");
+      const gridRow = rowIndex + 1;
       return `
-        <div class="red-tree-row">
-          <span class="red-tree-row-label">${row}</span>
-          <div class="red-tree-seat-block red-tree-left-block">${leftSeats}</div>
-          <div class="red-tree-seat-block red-tree-centre-block">${centreSeats}</div>
-          <div class="red-tree-seat-block red-tree-right-block">${rightSeats}</div>
-          <span class="red-tree-row-label">${row}</span>
-        </div>
+        <span class="red-tree-row-label" style="grid-row: ${gridRow}; grid-column: 1;">${row}</span>
+        <div class="red-tree-seat-block red-tree-left-block" style="grid-row: ${gridRow}; grid-column: 2;">${leftSeats}</div>
+        <div class="red-tree-seat-block red-tree-centre-block" style="grid-row: ${gridRow}; grid-column: 4;">${centreSeats}</div>
+        <div class="red-tree-seat-block red-tree-right-block" style="grid-row: ${gridRow}; grid-column: 6;">${rightSeats}</div>
+        <span class="red-tree-row-label" style="grid-row: ${gridRow}; grid-column: 7;">${row}</span>
       `;
     })
     .join("");
@@ -335,8 +334,8 @@ function renderRedTreeSeatMap(seatMap) {
         <div class="red-tree-stage">Stage</div>
         <div class="red-tree-front-label">Front row</div>
         <div class="red-tree-seating-area">
-          <span class="red-tree-long-aisle red-tree-long-aisle-left">Aisle</span>
-          <span class="red-tree-long-aisle red-tree-long-aisle-right">Aisle</span>
+          <span class="red-tree-long-aisle" style="grid-column: 3;">Aisle</span>
+          <span class="red-tree-long-aisle" style="grid-column: 5;">Aisle</span>
           ${rowMarkup}
         </div>
         <div class="red-tree-back-label">Back row</div>
