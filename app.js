@@ -309,9 +309,7 @@ function renderRedTreeSeatMap(seatMap) {
         <div class="red-tree-row">
           <span class="red-tree-row-label">${row}</span>
           <div class="red-tree-seat-block red-tree-left-block">${leftSeats}</div>
-          <span class="red-tree-aisle">Aisle</span>
           <div class="red-tree-seat-block red-tree-centre-block">${centreSeats}</div>
-          <span class="red-tree-aisle">Aisle</span>
           <div class="red-tree-seat-block red-tree-right-block">${rightSeats}</div>
           <span class="red-tree-row-label">${row}</span>
         </div>
@@ -336,7 +334,11 @@ function renderRedTreeSeatMap(seatMap) {
       <div class="red-tree-map">
         <div class="red-tree-stage">Stage</div>
         <div class="red-tree-front-label">Front row</div>
-        ${rowMarkup}
+        <div class="red-tree-seating-area">
+          <span class="red-tree-long-aisle red-tree-long-aisle-left">Aisle</span>
+          <span class="red-tree-long-aisle red-tree-long-aisle-right">Aisle</span>
+          ${rowMarkup}
+        </div>
         <div class="red-tree-back-label">Back row</div>
       </div>
       <div class="seat-map-legend">${legend}</div>
