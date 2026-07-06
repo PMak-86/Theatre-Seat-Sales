@@ -759,6 +759,117 @@ td.numeric {
   text-transform: uppercase;
 }
 
+.art-house-seat-map-panel {
+  overflow: hidden;
+}
+
+.art-house-map {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.34fr) minmax(280px, 1fr) minmax(90px, 0.34fr);
+  grid-template-areas:
+    ". label ."
+    "balcony2 stalls balcony1";
+  gap: 10px 16px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 10px;
+  background: #fff;
+}
+
+.art-house-stalls-label {
+  grid-area: label;
+  color: #071f3d;
+  text-align: center;
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.art-house-stalls {
+  grid-area: stalls;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 3px solid #aeb3b7;
+}
+
+.art-house-stalls-upper,
+.art-house-stalls-lower,
+.art-house-balcony {
+  display: grid;
+  gap: 4px;
+}
+
+.art-house-stalls-gap {
+  height: 18px;
+  border-top: 2px solid #9da4a8;
+  transform: skewX(4deg);
+}
+
+.art-house-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  gap: 5px;
+  align-items: center;
+}
+
+.art-house-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.art-house-seat-block {
+  display: grid;
+  grid-template-columns: repeat(var(--art-house-seat-count), minmax(4px, 1fr));
+  gap: 2px;
+}
+
+.art-house-stage {
+  width: 68%;
+  margin: 8px auto -2px;
+  padding: 15px 10px;
+  border: 1px solid #777;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(18px, 3vw, 26px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.art-house-balcony {
+  align-self: center;
+  padding: 8px;
+  border: 3px solid #aeb3b7;
+  transform: rotate(-26deg);
+}
+
+.art-house-balcony-one {
+  grid-area: balcony1;
+  transform: rotate(26deg);
+}
+
+.art-house-balcony-two {
+  grid-area: balcony2;
+}
+
+.art-house-balcony-title {
+  margin-bottom: 5px;
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.art-house-balcony .art-house-row {
+  grid-template-columns: 14px minmax(0, 1fr);
+}
+
+.art-house-balcony .art-house-row .art-house-row-label:last-child {
+  display: none;
+}
+
 .seat-dot {
   display: inline-block;
   width: 100%;
@@ -1193,6 +1304,54 @@ td.numeric {
 
   .red-tree-long-aisle {
     font-size: 9px;
+  }
+
+  .art-house-map {
+    grid-template-columns: minmax(48px, 0.28fr) minmax(220px, 1fr) minmax(48px, 0.28fr);
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .art-house-stalls-label {
+    font-size: 14px;
+  }
+
+  .art-house-stalls {
+    gap: 5px;
+    padding: 6px;
+    border-width: 2px;
+  }
+
+  .art-house-row {
+    grid-template-columns: 14px minmax(0, 1fr) 14px;
+    gap: 3px;
+  }
+
+  .art-house-row-label {
+    font-size: 10px;
+  }
+
+  .art-house-seat-block {
+    gap: 1px;
+  }
+
+  .art-house-stalls-gap {
+    height: 10px;
+  }
+
+  .art-house-stage {
+    width: 72%;
+    padding: 10px 6px;
+    font-size: 16px;
+  }
+
+  .art-house-balcony {
+    padding: 5px;
+    border-width: 2px;
+  }
+
+  .art-house-balcony-title {
+    font-size: 10px;
   }
 
   .breakdown-table,

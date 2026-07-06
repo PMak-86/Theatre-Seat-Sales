@@ -567,12 +567,38 @@ def is_red_tree_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) ->
     return "red tree" in venue and len(mappings) == 142
 
 
+def art_house_seat_position(index: int) -> dict[str, Any] | None:
+    sections = [
+        ("Stalls", ["T", "S", "R", "Q", "P", "N", "M", "L", "K", "J"], [23, 23, 24, 24, 24, 24, 24, 24, 24, 24], 1),
+        ("Stalls", ["H", "G", "F", "E", "D", "C", "B", "A"], [20, 25, 25, 25, 25, 25, 25, 25], 239),
+        ("Balcony 2", ["A", "B", "C", "D", "E", "F"], [5, 6, 6, 6, 6, 6], 434),
+        ("Balcony 1", ["A", "B", "C", "D", "E", "F"], [5, 6, 6, 6, 6, 6], 469),
+    ]
+    api_seat = index + 1
+    for section, rows, lengths, start in sections:
+        offset = api_seat - start
+        if offset < 0:
+            continue
+        for row, length in zip(rows, lengths):
+            if offset < length:
+                return {"section": section, "row": row, "seatNumber": offset + 1}
+            offset -= length
+    return None
+
+
+def is_art_house_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) -> bool:
+    venue = str(event.get("VenueName") or "").lower()
+    layout_id = int(event.get("VenueLayoutId") or 0)
+    return "art house" in venue and layout_id == 2472 and len(mappings) == 503
+
+
 def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None = None) -> dict[str, Any] | None:
     if not mappings:
         return None
     total = len(mappings)
     is_laycock = is_laycock_main_layout(event or {}, mappings)
     is_red_tree = is_red_tree_layout(event or {}, mappings)
+    is_art_house = is_art_house_layout(event or {}, mappings)
     columns = max(12, min(34, round(total ** 0.5 * 1.45)))
     seats = []
     for index, seat in enumerate(mappings):
@@ -593,9 +619,13 @@ def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None =
             position = red_tree_seat_position(index)
             if position:
                 seat_item.update(position)
+        elif is_art_house:
+            position = art_house_seat_position(index)
+            if position:
+                seat_item.update(position)
         seats.append(seat_item)
     return {
-        "type": "laycock-main" if is_laycock else "red-tree-main" if is_red_tree else "status-grid",
+        "type": "laycock-main" if is_laycock else "red-tree-main" if is_red_tree else "art-house-main" if is_art_house else "status-grid",
         "columns": columns,
         "seatCount": total,
         "seats": seats,

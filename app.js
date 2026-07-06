@@ -180,6 +180,9 @@ function renderSeatMap(seatMap) {
   if (seatMap.type === "red-tree-main") {
     return renderRedTreeSeatMap(seatMap);
   }
+  if (seatMap.type === "art-house-main") {
+    return renderArtHouseSeatMap(seatMap);
+  }
 
   const columns = Math.max(8, Math.min(Number(seatMap.columns) || 20, 40));
   const seats = seatMap.seats
@@ -339,6 +342,78 @@ function renderRedTreeSeatMap(seatMap) {
           ${rowMarkup}
         </div>
         <div class="red-tree-back-label">Back row</div>
+      </div>
+      <div class="seat-map-legend">${legend}</div>
+    </div>
+  `;
+}
+
+function renderArtHouseRows(seatByPosition, section, rows, lengths, blockClass) {
+  return rows
+    .map((row, rowIndex) => {
+      const length = lengths[rowIndex];
+      const seats = Array.from({ length }, (_, index) => {
+        const seatNumber = index + 1;
+        return renderSeatDot(seatByPosition.get(`${section}-${row}-${seatNumber}`));
+      }).join("");
+      return `
+        <div class="art-house-row ${blockClass}-row">
+          <span class="art-house-row-label">${escapeHtml(row)}</span>
+          <div class="art-house-seat-block ${blockClass}-seats" style="--art-house-seat-count: ${length}">${seats}</div>
+          <span class="art-house-row-label">${escapeHtml(row)}</span>
+        </div>
+      `;
+    })
+    .join("");
+}
+
+function renderArtHouseSeatMap(seatMap) {
+  const seatByPosition = new Map(
+    seatMap.seats
+      .filter((seat) => seat.section && seat.row && seat.seatNumber)
+      .map((seat) => [`${seat.section}-${seat.row}-${seat.seatNumber}`, seat])
+  );
+  const upperRows = ["T", "S", "R", "Q", "P", "N", "M", "L", "K", "J"];
+  const upperLengths = [23, 23, 24, 24, 24, 24, 24, 24, 24, 24];
+  const lowerRows = ["H", "G", "F", "E", "D", "C", "B", "A"];
+  const lowerLengths = [20, 25, 25, 25, 25, 25, 25, 25];
+  const balconyRows = ["F", "E", "D", "C", "B", "A"];
+  const balconyLengths = [6, 6, 6, 6, 6, 5];
+  const legend = (seatMap.legend || [])
+    .map((item) => `
+      <span class="seat-legend-item">
+        <span class="seat-dot seat-${escapeHtml(item.status)}"></span>
+        ${escapeHtml(item.label)}
+      </span>
+    `)
+    .join("");
+
+  return `
+    <div class="seat-map-panel art-house-seat-map-panel">
+      <div class="seat-map-header">
+        <strong>The Art House seat map snapshot</strong>
+        <span>${formatNumber.format(seatMap.seatCount || seatMap.seats.length)} seats captured at analysis time</span>
+      </div>
+      <div class="art-house-map">
+        <div class="art-house-stalls-label">Stalls</div>
+        <div class="art-house-balcony art-house-balcony-two">
+          <div class="art-house-balcony-title">Balcony 2</div>
+          ${renderArtHouseRows(seatByPosition, "Balcony 2", balconyRows, balconyLengths, "art-house-balcony")}
+        </div>
+        <div class="art-house-stalls">
+          <div class="art-house-stalls-upper">
+            ${renderArtHouseRows(seatByPosition, "Stalls", upperRows, upperLengths, "art-house-stalls-upper")}
+          </div>
+          <div class="art-house-stalls-gap"></div>
+          <div class="art-house-stalls-lower">
+            ${renderArtHouseRows(seatByPosition, "Stalls", lowerRows, lowerLengths, "art-house-stalls-lower")}
+          </div>
+          <div class="art-house-stage">Stage</div>
+        </div>
+        <div class="art-house-balcony art-house-balcony-one">
+          <div class="art-house-balcony-title">Balcony 1</div>
+          ${renderArtHouseRows(seatByPosition, "Balcony 1", balconyRows, balconyLengths, "art-house-balcony")}
+        </div>
       </div>
       <div class="seat-map-legend">${legend}</div>
     </div>
