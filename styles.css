@@ -686,6 +686,79 @@ td.numeric {
   text-transform: uppercase;
 }
 
+.red-tree-seat-map-panel {
+  overflow: hidden;
+}
+
+.red-tree-map {
+  display: grid;
+  gap: 7px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px;
+  background: #fff;
+}
+
+.red-tree-stage {
+  margin: 0 auto 12px;
+  color: #000;
+  text-align: center;
+  font-size: clamp(28px, 5vw, 48px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.red-tree-front-label,
+.red-tree-back-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+}
+
+.red-tree-row {
+  display: grid;
+  grid-template-columns: 20px minmax(42px, 0.7fr) minmax(24px, 42px) minmax(68px, 1.1fr) minmax(24px, 42px) minmax(52px, 0.85fr) 20px;
+  gap: 6px;
+  align-items: center;
+}
+
+.red-tree-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.red-tree-seat-block {
+  display: grid;
+  gap: 4px;
+}
+
+.red-tree-left-block {
+  grid-template-columns: repeat(5, minmax(7px, 1fr));
+}
+
+.red-tree-centre-block {
+  grid-template-columns: repeat(8, minmax(7px, 1fr));
+}
+
+.red-tree-right-block {
+  grid-template-columns: repeat(6, minmax(7px, 1fr));
+}
+
+.red-tree-aisle {
+  align-self: stretch;
+  display: grid;
+  place-items: center;
+  min-height: 20px;
+  background: #f5a7aa;
+  color: #071f3d;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
 .seat-dot {
   display: inline-block;
   width: 100%;

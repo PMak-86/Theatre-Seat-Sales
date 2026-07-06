@@ -553,11 +553,26 @@ def is_laycock_main_layout(event: dict[str, Any], mappings: list[dict[str, Any]]
     return "laycock" in venue and len(mappings) == 396
 
 
+def red_tree_seat_position(index: int) -> dict[str, Any] | None:
+    rows = ["A", "B", "C", "D", "E", "F", "G"]
+    if index < 133:
+        return {"row": rows[index // 19], "seatNumber": (index % 19) + 1}
+    if index < 142:
+        return {"row": "H", "seatNumber": index - 132}
+    return None
+
+
+def is_red_tree_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) -> bool:
+    venue = str(event.get("VenueName") or "").lower()
+    return "red tree" in venue and len(mappings) == 142
+
+
 def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None = None) -> dict[str, Any] | None:
     if not mappings:
         return None
     total = len(mappings)
     is_laycock = is_laycock_main_layout(event or {}, mappings)
+    is_red_tree = is_red_tree_layout(event or {}, mappings)
     columns = max(12, min(34, round(total ** 0.5 * 1.45)))
     seats = []
     for index, seat in enumerate(mappings):
@@ -574,9 +589,13 @@ def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None =
             position = laycock_seat_position(index)
             if position:
                 seat_item.update(position)
+        elif is_red_tree:
+            position = red_tree_seat_position(index)
+            if position:
+                seat_item.update(position)
         seats.append(seat_item)
     return {
-        "type": "laycock-main" if is_laycock else "status-grid",
+        "type": "laycock-main" if is_laycock else "red-tree-main" if is_red_tree else "status-grid",
         "columns": columns,
         "seatCount": total,
         "seats": seats,

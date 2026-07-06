@@ -177,6 +177,9 @@ function renderSeatMap(seatMap) {
   if (seatMap.type === "laycock-main") {
     return renderLaycockSeatMap(seatMap);
   }
+  if (seatMap.type === "red-tree-main") {
+    return renderRedTreeSeatMap(seatMap);
+  }
 
   const columns = Math.max(8, Math.min(Number(seatMap.columns) || 20, 40));
   const seats = seatMap.seats
@@ -275,6 +278,66 @@ function renderLaycockSeatMap(seatMap) {
         <div class="laycock-back-label">Back row</div>
         ${rowMarkup}
         <div class="laycock-stage">Stage</div>
+      </div>
+      <div class="seat-map-legend">${legend}</div>
+    </div>
+  `;
+}
+
+function renderRedTreeSeatMap(seatMap) {
+  const seatByPosition = new Map(
+    seatMap.seats
+      .filter((seat) => seat.row && seat.seatNumber)
+      .map((seat) => [`${seat.row}-${seat.seatNumber}`, seat])
+  );
+  const rows = ["A", "B", "C", "D", "E", "F", "G", "H"];
+  const rowMarkup = rows
+    .map((row) => {
+      const leftSeats = Array.from({ length: 5 }, (_, index) => {
+        const seatNumber = index + 1;
+        return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
+      }).join("");
+      const centreSeats = Array.from({ length: 8 }, (_, index) => {
+        const seatNumber = index + 6;
+        return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
+      }).join("");
+      const rightSeats = Array.from({ length: 6 }, (_, index) => {
+        const seatNumber = index + 14;
+        return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
+      }).join("");
+      return `
+        <div class="red-tree-row">
+          <span class="red-tree-row-label">${row}</span>
+          <div class="red-tree-seat-block red-tree-left-block">${leftSeats}</div>
+          <span class="red-tree-aisle">Aisle</span>
+          <div class="red-tree-seat-block red-tree-centre-block">${centreSeats}</div>
+          <span class="red-tree-aisle">Aisle</span>
+          <div class="red-tree-seat-block red-tree-right-block">${rightSeats}</div>
+          <span class="red-tree-row-label">${row}</span>
+        </div>
+      `;
+    })
+    .join("");
+  const legend = (seatMap.legend || [])
+    .map((item) => `
+      <span class="seat-legend-item">
+        <span class="seat-dot seat-${escapeHtml(item.status)}"></span>
+        ${escapeHtml(item.label)}
+      </span>
+    `)
+    .join("");
+
+  return `
+    <div class="seat-map-panel red-tree-seat-map-panel">
+      <div class="seat-map-header">
+        <strong>Red Tree Theatre seat map snapshot</strong>
+        <span>${formatNumber.format(seatMap.seatCount || seatMap.seats.length)} seats captured at analysis time</span>
+      </div>
+      <div class="red-tree-map">
+        <div class="red-tree-stage">Stage</div>
+        <div class="red-tree-front-label">Front row</div>
+        ${rowMarkup}
+        <div class="red-tree-back-label">Back row</div>
       </div>
       <div class="seat-map-legend">${legend}</div>
     </div>
