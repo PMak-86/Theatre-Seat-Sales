@@ -526,26 +526,57 @@ def seat_snapshot_status(seat: dict[str, Any]) -> str:
     return "available"
 
 
-def seat_snapshot(mappings: list[dict[str, Any]]) -> dict[str, Any] | None:
+def laycock_seat_position(index: int) -> dict[str, Any] | None:
+    rear_rows = ["N", "M", "L", "K", "J", "H", "G", "F", "E"]
+    if index < 144:
+        return {"row": rear_rows[index // 16], "seatNumber": (index % 16) + 1}
+    if index < 288:
+        offset = index - 144
+        return {"row": rear_rows[offset // 16], "seatNumber": (offset % 16) + 17}
+
+    front_rows = [
+        ("D", 2, 30),
+        ("C", 3, 28),
+        ("B", 4, 26),
+        ("A", 5, 24),
+    ]
+    offset = index - 288
+    for row, first_seat, count in front_rows:
+        if offset < count:
+            return {"row": row, "seatNumber": first_seat + offset}
+        offset -= count
+    return None
+
+
+def is_laycock_main_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) -> bool:
+    venue = str(event.get("VenueName") or "").lower()
+    return "laycock" in venue and len(mappings) == 396
+
+
+def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None = None) -> dict[str, Any] | None:
     if not mappings:
         return None
     total = len(mappings)
+    is_laycock = is_laycock_main_layout(event or {}, mappings)
     columns = max(12, min(34, round(total ** 0.5 * 1.45)))
     seats = []
     for index, seat in enumerate(mappings):
         status = seat_snapshot_status(seat)
         code = str(seat.get("HoldChar") or "").strip()
         label = str(seat.get("HoldName") or "").strip()
-        seats.append(
-            {
-                "index": index,
-                "status": status,
-                "code": code,
-                "label": label,
-            }
-        )
+        seat_item = {
+            "index": index,
+            "status": status,
+            "code": code,
+            "label": label,
+        }
+        if is_laycock:
+            position = laycock_seat_position(index)
+            if position:
+                seat_item.update(position)
+        seats.append(seat_item)
     return {
-        "type": "status-grid",
+        "type": "laycock-main" if is_laycock else "status-grid",
         "columns": columns,
         "seatCount": total,
         "seats": seats,
@@ -608,7 +639,7 @@ def analyse_session(
         mappings.extend(level.get("PLSeatMapObjectMappings") or [])
 
     if mappings:
-        seat_map = seat_snapshot(mappings)
+        seat_map = seat_snapshot(mappings, event)
         capacity_seats = [seat for seat in mappings if not is_excluded_from_capacity(seat)]
         total = len(capacity_seats)
         breakdown: dict[tuple[str, str, str], dict[str, Any]] = {}

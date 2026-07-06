@@ -174,6 +174,10 @@ function renderSeatMap(seatMap) {
     return "";
   }
 
+  if (seatMap.type === "laycock-main") {
+    return renderLaycockSeatMap(seatMap);
+  }
+
   const columns = Math.max(8, Math.min(Number(seatMap.columns) || 20, 40));
   const seats = seatMap.seats
     .map((seat) => {
@@ -201,6 +205,76 @@ function renderSeatMap(seatMap) {
       <div class="seat-map-stage">Stage</div>
       <div class="seat-map-grid" style="--seat-columns: ${columns}">
         ${seats}
+      </div>
+      <div class="seat-map-legend">${legend}</div>
+    </div>
+  `;
+}
+
+function seatTitle(seat) {
+  const titleParts = [
+    seat.row && seat.seatNumber ? `Row ${seat.row} Seat ${seat.seatNumber}` : `Seat ${Number(seat.index || 0) + 1}`,
+    seat.label,
+    seat.code ? `Code ${seat.code}` : "",
+  ].filter(Boolean);
+  return escapeHtml(titleParts.join(" - "));
+}
+
+function renderSeatDot(seat) {
+  if (!seat) {
+    return `<span class="seat-empty" aria-hidden="true"></span>`;
+  }
+  const status = escapeHtml(seat.status || "available");
+  return `<span class="seat-dot seat-${status}" title="${seatTitle(seat)}"></span>`;
+}
+
+function renderLaycockSeatMap(seatMap) {
+  const seatByPosition = new Map(
+    seatMap.seats
+      .filter((seat) => seat.row && seat.seatNumber)
+      .map((seat) => [`${seat.row}-${seat.seatNumber}`, seat])
+  );
+  const rows = ["N", "M", "L", "K", "J", "H", "G", "F", "E", "D", "C", "B", "A"];
+  const rowMarkup = rows
+    .map((row) => {
+      const leftSeats = Array.from({ length: 16 }, (_, index) => {
+        const seatNumber = index + 1;
+        return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
+      }).join("");
+      const rightSeats = Array.from({ length: 16 }, (_, index) => {
+        const seatNumber = index + 17;
+        return renderSeatDot(seatByPosition.get(`${row}-${seatNumber}`));
+      }).join("");
+      return `
+        <div class="laycock-row">
+          <span class="laycock-row-label">${row}</span>
+          <div class="laycock-seat-block">${leftSeats}</div>
+          <span class="laycock-aisle"></span>
+          <div class="laycock-seat-block">${rightSeats}</div>
+          <span class="laycock-row-label">${row}</span>
+        </div>
+      `;
+    })
+    .join("");
+  const legend = (seatMap.legend || [])
+    .map((item) => `
+      <span class="seat-legend-item">
+        <span class="seat-dot seat-${escapeHtml(item.status)}"></span>
+        ${escapeHtml(item.label)}
+      </span>
+    `)
+    .join("");
+
+  return `
+    <div class="seat-map-panel laycock-seat-map-panel">
+      <div class="seat-map-header">
+        <strong>Laycock Street seat map snapshot</strong>
+        <span>${formatNumber.format(seatMap.seatCount || seatMap.seats.length)} seats captured at analysis time</span>
+      </div>
+      <div class="laycock-map">
+        <div class="laycock-back-label">Back row</div>
+        ${rowMarkup}
+        <div class="laycock-stage">Stage</div>
       </div>
       <div class="seat-map-legend">${legend}</div>
     </div>

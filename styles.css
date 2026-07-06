@@ -626,6 +626,66 @@ td.numeric {
   margin: 0 auto;
 }
 
+.laycock-seat-map-panel {
+  overflow: hidden;
+}
+
+.laycock-map {
+  display: grid;
+  gap: 6px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 12px;
+  border: 2px solid #cfd5da;
+  background: #fff;
+}
+
+.laycock-back-label {
+  color: #52616b;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.laycock-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(18px, 34px) minmax(0, 1fr) 20px;
+  gap: 6px;
+  align-items: center;
+}
+
+.laycock-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.laycock-seat-block {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(5px, 1fr));
+  gap: 3px;
+}
+
+.laycock-aisle {
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c6ced4 20%, #c6ced4 80%, transparent);
+}
+
+.laycock-stage {
+  width: 88%;
+  margin: 14px auto 0;
+  padding: 18px 10px;
+  border: 1px solid #7f878d;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(22px, 4vw, 36px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
 .seat-dot {
   display: inline-block;
   width: 100%;
@@ -634,6 +694,12 @@ td.numeric {
   border-radius: 50%;
   background: #d8e0e5;
   box-shadow: inset 0 0 0 1px rgba(7, 31, 61, 0.08);
+}
+
+.seat-empty {
+  display: inline-block;
+  width: 100%;
+  aspect-ratio: 1;
 }
 
 .seat-available {
