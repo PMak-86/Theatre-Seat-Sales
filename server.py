@@ -618,7 +618,53 @@ def is_art_house_layout(event: dict[str, Any], mappings: list[dict[str, Any]]) -
     return "art house" in venue and layout_id == 2472 and len(mappings) == 503
 
 
-def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None = None) -> dict[str, Any] | None:
+def layout_number(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def layout_location_value(properties: dict[str, Any], key: str) -> float:
+    location = properties.get("Location") if isinstance(properties.get("Location"), dict) else {}
+    value = layout_number(location.get(key))
+    return value if value is not None else 0.0
+
+
+def ticketsearch_layout_positions(layout_objects: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    parents = {
+        int(item["VenueLayoutSeatMapObjectId"]): item
+        for item in layout_objects
+        if item.get("VenueLayoutSeatMapObjectId") is not None
+    }
+    positions: dict[int, dict[str, Any]] = {}
+    for item in layout_objects:
+        if item.get("ObjectType") != 384 or item.get("VenueLayoutSeatMapObjectId") is None:
+            continue
+        row = str(item.get("GroupLabel") or "").strip()
+        seat_label = str(item.get("SeatLabel") or "").strip()
+        if not row or not seat_label:
+            continue
+        parent = parents.get(int(item.get("ParentId") or 0)) or {}
+        parent_properties = parent.get("ObjectProperties") if isinstance(parent.get("ObjectProperties"), dict) else {}
+        properties = item.get("ObjectProperties") if isinstance(item.get("ObjectProperties"), dict) else {}
+        seat_number = layout_number(seat_label)
+        section = str(item.get("SectionLabel") or parent.get("SectionLabel") or "Stalls").strip() or "Stalls"
+        positions[int(item["VenueLayoutSeatMapObjectId"])] = {
+            "section": section,
+            "row": row,
+            "seatNumber": int(seat_number) if seat_number is not None and seat_number.is_integer() else seat_label,
+            "visualX": layout_location_value(parent_properties, "X") + layout_location_value(properties, "X"),
+            "visualY": layout_location_value(parent_properties, "Y") + layout_location_value(properties, "Y"),
+        }
+    return positions
+
+
+def seat_snapshot(
+    mappings: list[dict[str, Any]],
+    event: dict[str, Any] | None = None,
+    layout_positions: dict[int, dict[str, Any]] | None = None,
+) -> dict[str, Any] | None:
     if not mappings:
         return None
     total = len(mappings)
@@ -646,7 +692,8 @@ def seat_snapshot(mappings: list[dict[str, Any]], event: dict[str, Any] | None =
             if position:
                 seat_item.update(position)
         elif is_art_house:
-            position = art_house_seat_position(index)
+            seatmap_id = seat.get("VenueLayoutSeatmapObjectId") or seat.get("VenueLayoutSeatMapObjectId")
+            position = (layout_positions or {}).get(int(seatmap_id or 0)) or art_house_seat_position(index)
             if position:
                 seat_item.update(position)
         seats.append(seat_item)
@@ -713,7 +760,30 @@ def analyse_session(
         mappings.extend(level.get("PLSeatMapObjectMappings") or [])
 
     if mappings:
-        seat_map = seat_snapshot(mappings, event)
+        layout_positions = None
+        if is_art_house_layout(event, mappings):
+            seatmap_payload = {
+                "SalesEventSeatMapGet": {
+                    "EventId": event_id,
+                    "EventScheduleId": schedule_id,
+                    "VenueLayoutId": event.get("VenueLayoutId"),
+                    "VenueLayoutDetailId": 0,
+                    "IsRSLayout": is_reserved,
+                    "OperatorShoppingCartId": 0,
+                }
+            }
+            seatmap_result = api_result(
+                request_json(
+                    f"{API_BASE}/OnlineApi/SalesEventDetail/GetSalesEventSeatMapDetails",
+                    token,
+                    seatmap_payload,
+                    origin=mask_url,
+                    referer=f"{mask_url}/sales/salesevent/{event_id}",
+                )
+            )
+            layout_positions = ticketsearch_layout_positions(seatmap_result.get("VenueLayoutSeatMapObjects") or [])
+
+        seat_map = seat_snapshot(mappings, event, layout_positions)
         capacity_seats = [seat for seat in mappings if not is_excluded_from_capacity(seat)]
         total = len(capacity_seats)
         breakdown: dict[tuple[str, str, str], dict[str, Any]] = {}
