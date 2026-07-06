@@ -353,7 +353,7 @@ function renderArtHouseRows(seatByPosition, section, rows, lengths, blockClass) 
     .map((row, rowIndex) => {
       const length = lengths[rowIndex];
       const seats = Array.from({ length }, (_, index) => {
-        const seatNumber = index + 1;
+        const seatNumber = length - index;
         return renderSeatDot(seatByPosition.get(`${section}-${row}-${seatNumber}`));
       }).join("");
       return `
