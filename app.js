@@ -169,6 +169,44 @@ function percentCellLabel(session) {
   return percent(session.effectiveSoldPercent);
 }
 
+function renderSeatMap(seatMap) {
+  if (!seatMap || !Array.isArray(seatMap.seats) || !seatMap.seats.length) {
+    return "";
+  }
+
+  const columns = Math.max(8, Math.min(Number(seatMap.columns) || 20, 40));
+  const seats = seatMap.seats
+    .map((seat) => {
+      const status = escapeHtml(seat.status || "available");
+      const titleParts = [seat.label, seat.code ? `Code ${seat.code}` : "", `Seat ${Number(seat.index || 0) + 1}`]
+        .filter(Boolean);
+      return `<span class="seat-dot seat-${status}" title="${escapeHtml(titleParts.join(" - "))}"></span>`;
+    })
+    .join("");
+  const legend = (seatMap.legend || [])
+    .map((item) => `
+      <span class="seat-legend-item">
+        <span class="seat-dot seat-${escapeHtml(item.status)}"></span>
+        ${escapeHtml(item.label)}
+      </span>
+    `)
+    .join("");
+
+  return `
+    <div class="seat-map-panel">
+      <div class="seat-map-header">
+        <strong>Seat map snapshot</strong>
+        <span>${formatNumber.format(seatMap.seatCount || seatMap.seats.length)} seats captured at analysis time</span>
+      </div>
+      <div class="seat-map-stage">Stage</div>
+      <div class="seat-map-grid" style="--seat-columns: ${columns}">
+        ${seats}
+      </div>
+      <div class="seat-map-legend">${legend}</div>
+    </div>
+  `;
+}
+
 function baselineLabel(value) {
   if (!value) return "No daily baseline yet";
   return `Compared with ${formatSnapshotDateTime.format(new Date(value))}`;
@@ -253,6 +291,7 @@ function render(data) {
             <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
             <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
           </div>
+          ${renderSeatMap(session.seatMap)}
           ${renderBreakdown(session.breakdown)}
         </div>
       </td>

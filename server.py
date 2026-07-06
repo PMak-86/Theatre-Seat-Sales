@@ -508,6 +508,57 @@ def is_excluded_from_capacity(seat: dict[str, Any]) -> bool:
     return bool(seat.get("IsExcludeFromCapacity")) or is_kill_hide_seat(seat)
 
 
+def seat_snapshot_status(seat: dict[str, Any]) -> str:
+    if is_excluded_from_capacity(seat):
+        return "excluded"
+    if seat.get("IsSold"):
+        return "sold"
+    code = str(seat.get("HoldChar") or "")
+    label = str(seat.get("HoldName") or "")
+    if code:
+        return "sold-equivalent" if counts_toward_sold_percent(code, label, False) else "hold"
+    if seat.get("IsBlock"):
+        return "blocked"
+    if seat.get("IsSDSeat"):
+        return "special"
+    if seat.get("IsSelected"):
+        return "selected"
+    return "available"
+
+
+def seat_snapshot(mappings: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if not mappings:
+        return None
+    total = len(mappings)
+    columns = max(12, min(34, round(total ** 0.5 * 1.45)))
+    seats = []
+    for index, seat in enumerate(mappings):
+        status = seat_snapshot_status(seat)
+        code = str(seat.get("HoldChar") or "").strip()
+        label = str(seat.get("HoldName") or "").strip()
+        seats.append(
+            {
+                "index": index,
+                "status": status,
+                "code": code,
+                "label": label,
+            }
+        )
+    return {
+        "type": "status-grid",
+        "columns": columns,
+        "seatCount": total,
+        "seats": seats,
+        "legend": [
+            {"status": "available", "label": "Available"},
+            {"status": "sold", "label": "Sold"},
+            {"status": "sold-equivalent", "label": "Sold % hold"},
+            {"status": "hold", "label": "Unavailable"},
+            {"status": "excluded", "label": "Hidden/kill"},
+        ],
+    }
+
+
 def analyse_session(
     token: str,
     event_id: int,
@@ -557,6 +608,7 @@ def analyse_session(
         mappings.extend(level.get("PLSeatMapObjectMappings") or [])
 
     if mappings:
+        seat_map = seat_snapshot(mappings)
         capacity_seats = [seat for seat in mappings if not is_excluded_from_capacity(seat)]
         total = len(capacity_seats)
         breakdown: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -656,6 +708,7 @@ def analyse_session(
         unavailable_other = 0
         revenue = None
         breakdown_rows = []
+        seat_map = None
 
     sold_percent = (tickets_sold / total * 100) if total else 0
     effective_sold_percent = (effective_sold / total * 100) if total else 0
@@ -675,6 +728,7 @@ def analyse_session(
         "notAvailableSeats": tickets_sold + unavailable_other,
         "revenueEstimate": revenue,
         "breakdown": breakdown_rows,
+        "seatMap": seat_map,
         "thresholdAlert": schedule.get("ThresholdAlert"),
         "isSoldOut": bool(schedule.get("IsSoldOut")),
     }
