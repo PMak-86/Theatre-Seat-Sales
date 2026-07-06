@@ -1162,6 +1162,39 @@ td.numeric {
     margin-bottom: 12px;
   }
 
+  .red-tree-map {
+    max-width: 560px;
+    padding: 8px 6px;
+    gap: 5px;
+  }
+
+  .red-tree-stage {
+    margin-bottom: 8px;
+    font-size: clamp(24px, 6vw, 34px);
+  }
+
+  .red-tree-front-label,
+  .red-tree-back-label {
+    font-size: 12px;
+  }
+
+  .red-tree-seating-area {
+    grid-template-columns: 16px minmax(36px, 0.74fr) 20px minmax(64px, 1.15fr) 20px minmax(46px, 0.88fr) 16px;
+    gap: 5px 6px;
+  }
+
+  .red-tree-seat-block {
+    gap: 3px;
+  }
+
+  .red-tree-row-label {
+    font-size: 12px;
+  }
+
+  .red-tree-long-aisle {
+    font-size: 9px;
+  }
+
   .breakdown-table,
   .breakdown-table tbody,
   .breakdown-table tr,
