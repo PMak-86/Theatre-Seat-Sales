@@ -631,6 +631,12 @@ def layout_location_value(properties: dict[str, Any], key: str) -> float:
     return value if value is not None else 0.0
 
 
+def layout_point_value(properties: dict[str, Any], point_key: str, axis_key: str) -> float | None:
+    point = properties.get(point_key) if isinstance(properties.get(point_key), dict) else {}
+    value = layout_number(point.get(axis_key))
+    return value
+
+
 def ticketsearch_layout_positions(layout_objects: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     parents = {
         int(item["VenueLayoutSeatMapObjectId"]): item
@@ -650,12 +656,26 @@ def ticketsearch_layout_positions(layout_objects: list[dict[str, Any]]) -> dict[
         properties = item.get("ObjectProperties") if isinstance(item.get("ObjectProperties"), dict) else {}
         seat_number = layout_number(seat_label)
         section = str(item.get("SectionLabel") or parent.get("SectionLabel") or "Stalls").strip() or "Stalls"
+        parent_width = layout_number(parent_properties.get("Width")) or 0.0
+        parent_height = layout_number(parent_properties.get("Height")) or 0.0
+        parent_center_x = layout_point_value(parent_properties, "CenterPoint", "X")
+        parent_center_y = layout_point_value(parent_properties, "CenterPoint", "Y")
+        parent_x = (
+            parent_center_x - (parent_width / 2)
+            if parent_center_x is not None
+            else layout_location_value(parent_properties, "X")
+        )
+        parent_y = (
+            parent_center_y - (parent_height / 2)
+            if parent_center_y is not None
+            else layout_location_value(parent_properties, "Y")
+        )
         positions[int(item["VenueLayoutSeatMapObjectId"])] = {
             "section": section,
             "row": row,
             "seatNumber": int(seat_number) if seat_number is not None and seat_number.is_integer() else seat_label,
-            "visualX": layout_location_value(parent_properties, "X") + layout_location_value(properties, "X"),
-            "visualY": layout_location_value(parent_properties, "Y") + layout_location_value(properties, "Y"),
+            "visualX": parent_x + layout_location_value(properties, "X"),
+            "visualY": parent_y + layout_location_value(properties, "Y"),
         }
     return positions
 

@@ -539,6 +539,30 @@ td.numeric {
   background: #f7fafb;
 }
 
+.session-final td {
+  background: #fbfcf8;
+}
+
+.final-badge {
+  display: inline-flex;
+  width: fit-content;
+  margin-left: 8px;
+  padding: 3px 7px;
+  border: 1px solid #c7d8ca;
+  border-radius: 999px;
+  background: #edf7ef;
+  color: #214b2c;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.final-note .final-badge {
+  margin-left: 0;
+}
+
 .expand-button {
   width: 30px;
   min-width: 30px;
@@ -823,6 +847,52 @@ td.numeric {
   display: grid;
   grid-template-columns: repeat(var(--art-house-seat-count), minmax(4px, 1fr));
   gap: 2px;
+}
+
+.art-house-stalls-coordinate {
+  position: relative;
+  min-height: 0;
+  aspect-ratio: var(--art-house-stalls-ratio, 1.08);
+  border: 3px solid #aeb3b7;
+}
+
+.art-house-coordinate-seat {
+  position: absolute;
+  width: clamp(6px, 1.75%, 13px);
+  min-width: 0;
+  transform: translate(-50%, -50%);
+}
+
+.art-house-coordinate-row-label {
+  position: absolute;
+  z-index: 2;
+  color: #071f3d;
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.art-house-coordinate-row-label-left {
+  left: 2px;
+}
+
+.art-house-coordinate-row-label-right {
+  right: 2px;
+}
+
+.art-house-coordinate-stage {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 2.5%;
+  padding: 13px 8px;
+  border: 1px solid #777;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(18px, 3vw, 26px);
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .art-house-stage {
@@ -1333,6 +1403,25 @@ td.numeric {
 
   .art-house-seat-block {
     gap: 1px;
+  }
+
+  .art-house-stalls-coordinate {
+    padding: 0;
+  }
+
+  .art-house-coordinate-seat {
+    width: clamp(5px, 1.95%, 9px);
+  }
+
+  .art-house-coordinate-row-label {
+    font-size: 10px;
+  }
+
+  .art-house-coordinate-stage {
+    left: 18%;
+    right: 18%;
+    padding: 9px 5px;
+    font-size: 16px;
   }
 
   .art-house-stalls-gap {

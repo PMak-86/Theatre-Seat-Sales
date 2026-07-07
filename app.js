@@ -226,12 +226,14 @@ function seatTitle(seat) {
   return escapeHtml(titleParts.join(" - "));
 }
 
-function renderSeatDot(seat) {
+function renderSeatDot(seat, extraClass = "", style = "") {
   if (!seat) {
     return `<span class="seat-empty" aria-hidden="true"></span>`;
   }
   const status = escapeHtml(seat.status || "available");
-  return `<span class="seat-dot seat-${status}" title="${seatTitle(seat)}"></span>`;
+  const className = extraClass ? ` ${extraClass}` : "";
+  const styleAttr = style ? ` style="${style}"` : "";
+  return `<span class="seat-dot seat-${status}${className}"${styleAttr} title="${seatTitle(seat)}"></span>`;
 }
 
 function renderLaycockSeatMap(seatMap) {
@@ -376,6 +378,68 @@ function renderArtHouseRows(seatsByPosition, section, rows, blockClass) {
     .join("");
 }
 
+function artHouseBounds(seats) {
+  const coordinates = seats.filter((seat) => Number.isFinite(seat.visualX) && Number.isFinite(seat.visualY));
+  if (!coordinates.length) return null;
+  const xs = coordinates.map((seat) => seat.visualX);
+  const ys = coordinates.map((seat) => seat.visualY);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const width = Math.max(maxX - minX, 1);
+  const height = Math.max(maxY - minY, 1);
+  return {
+    minX: minX - width * 0.06,
+    maxX: maxX + width * 0.06,
+    minY: minY - height * 0.06,
+    maxY: maxY + height * 0.22,
+  };
+}
+
+function coordinatePercent(value, min, max) {
+  return ((value - min) / Math.max(max - min, 1)) * 100;
+}
+
+function renderArtHouseCoordinateStalls(seats) {
+  const stallsSeats = seats.filter((seat) => seat.section === "Stalls");
+  const bounds = artHouseBounds(stallsSeats);
+  if (!bounds) return "";
+
+  const seatMarkup = stallsSeats
+    .map((seat) => {
+      const left = coordinatePercent(seat.visualX, bounds.minX, bounds.maxX);
+      const top = coordinatePercent(seat.visualY, bounds.minY, bounds.maxY);
+      return renderSeatDot(
+        seat,
+        "art-house-coordinate-seat",
+        `left: ${left.toFixed(3)}%; top: ${top.toFixed(3)}%;`
+      );
+    })
+    .join("");
+
+  const rowLabels = [...new Set(stallsSeats.map((seat) => seat.row))]
+    .map((row) => {
+      const rowSeats = stallsSeats.filter((seat) => seat.row === row);
+      const y = rowSeats.reduce((total, seat) => total + seat.visualY, 0) / rowSeats.length;
+      const top = coordinatePercent(y, bounds.minY, bounds.maxY);
+      return `
+        <span class="art-house-coordinate-row-label art-house-coordinate-row-label-left" style="top: ${top.toFixed(3)}%">${escapeHtml(row)}</span>
+        <span class="art-house-coordinate-row-label art-house-coordinate-row-label-right" style="top: ${top.toFixed(3)}%">${escapeHtml(row)}</span>
+      `;
+    })
+    .join("");
+  const ratio = ((bounds.maxX - bounds.minX) / Math.max(bounds.maxY - bounds.minY, 1)).toFixed(3);
+
+  return `
+    <div class="art-house-stalls art-house-stalls-coordinate" style="--art-house-stalls-ratio: ${ratio};">
+      <div class="art-house-coordinate-stage">Stage</div>
+      ${rowLabels}
+      ${seatMarkup}
+    </div>
+  `;
+}
+
 function renderArtHouseSeatMap(seatMap) {
   const seatsByPosition = (seatMap.seats || [])
     .filter((seat) => seat.section && seat.row && seat.seatNumber)
@@ -390,6 +454,9 @@ function renderArtHouseSeatMap(seatMap) {
   const upperRows = ["T", "S", "R", "Q", "P", "N", "M", "L", "K", "J"];
   const lowerRows = ["H", "G", "F", "E", "D", "C", "B", "A"];
   const balconyRows = ["F", "E", "D", "C", "B", "A"];
+  const coordinateStalls = seatsByPosition.some(
+    (seat) => seat.section === "Stalls" && Number.isFinite(seat.visualX) && Number.isFinite(seat.visualY)
+  );
   const legend = (seatMap.legend || [])
     .map((item) => `
       <span class="seat-legend-item">
@@ -411,6 +478,7 @@ function renderArtHouseSeatMap(seatMap) {
           <div class="art-house-balcony-title">Balcony 2</div>
           ${renderArtHouseRows(seatsByPosition, "Balcony 2", rowOrder("Balcony 2", balconyRows), "art-house-balcony")}
         </div>
+        ${coordinateStalls ? renderArtHouseCoordinateStalls(seatsByPosition) : `
         <div class="art-house-stalls">
           <div class="art-house-stalls-upper">
             ${renderArtHouseRows(seatsByPosition, "Stalls", rowOrder("Stalls", upperRows), "art-house-stalls-upper")}
@@ -421,6 +489,7 @@ function renderArtHouseSeatMap(seatMap) {
           </div>
           <div class="art-house-stage">Stage</div>
         </div>
+        `}
         <div class="art-house-balcony art-house-balcony-one">
           <div class="art-house-balcony-title">Balcony 1</div>
           ${renderArtHouseRows(seatsByPosition, "Balcony 1", rowOrder("Balcony 1", balconyRows), "art-house-balcony")}
@@ -434,6 +503,14 @@ function renderArtHouseSeatMap(seatMap) {
 function baselineLabel(value) {
   if (!value) return "No daily baseline yet";
   return `Compared with ${formatSnapshotDateTime.format(new Date(value))}`;
+}
+
+function finalNumbersBadge(session) {
+  if (!session.isFinal) return "";
+  const captured = session.finalSnapshotCapturedAt
+    ? `Final snapshot captured ${formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt))}`
+    : "Final snapshot numbers";
+  return `<span class="final-badge" title="${escapeHtml(captured)}">Final numbers</span>`;
 }
 
 function formatDateRange(range) {
@@ -477,11 +554,11 @@ function render(data) {
   data.sessions.forEach((session, index) => {
     const when = session.dateTime ? new Date(session.dateTime) : null;
     const row = document.createElement("tr");
-    row.className = "session-row";
+    row.className = `session-row${session.isFinal ? " session-final" : ""}`;
     row.dataset.detail = `detail-${index}`;
     row.innerHTML = `
       <td><button class="expand-button" type="button" aria-expanded="false" aria-controls="detail-${index}">+</button></td>
-      <td data-label="Date">${when ? formatDate.format(when) : ""}</td>
+      <td data-label="Date"><span>${when ? formatDate.format(when) : ""}</span>${finalNumbersBadge(session)}</td>
       <td data-label="Time">${when ? formatTime.format(when) : ""}</td>
       <td data-label="Sold">${soldCellLabel(session)}</td>
       <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
@@ -514,6 +591,7 @@ function render(data) {
             ${session.capacityUnknown ? `<span>${escapeHtml(session.statusLabel || "Capacity unknown")}</span>` : ""}
             <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
             <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
+            ${session.isFinal ? `<span class="final-note">${finalNumbersBadge(session)}</span>` : ""}
           </div>
           ${renderSeatMap(session.seatMap)}
           ${renderBreakdown(session.breakdown)}
