@@ -243,6 +243,22 @@ def parse_event_datetime(value: str | None) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
+def parse_performance_wall_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).replace("Z", "+00:00")
+    if "+" in text:
+        text = text.rsplit("+", 1)[0]
+    elif len(text) > 19 and text[19] == "-":
+        text = text[:19]
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return parse_event_datetime(value)
+    offset = sydney_offset_hours(parsed.replace(tzinfo=timezone.utc))
+    return parsed.replace(tzinfo=timezone(timedelta(hours=offset))).astimezone(timezone.utc)
+
+
 def recompute_summary(data: dict[str, Any]) -> None:
     sessions = data.get("sessions") or []
     total_seats = sum(int(item.get("totalSeats") or 0) for item in sessions)
@@ -1400,7 +1416,7 @@ def store_snapshot(
     }
 
 
-def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 20) -> set[int]:
+def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 15) -> set[int]:
     rows = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
@@ -1409,7 +1425,7 @@ def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 20)
     )
     finalized: set[int] = set()
     for row in rows or []:
-        show_time = parse_event_datetime(row.get("show_datetime"))
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         snapshot = row.get("event_snapshots") or {}
         captured_at = parse_event_datetime(snapshot.get("captured_at"))
         if not show_time or not captured_at:
@@ -1477,11 +1493,9 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not tracked:
         return
 
-    now_utc = datetime.now(timezone.utc)
     rows = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked[0]['id']}"
-        f"&show_datetime=lte.{quote(now_utc.isoformat(), safe='')}"
         "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
         "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,"
         "breakdown,event_snapshots!inner(source,captured_at)"
@@ -1490,10 +1504,11 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not rows:
         return
 
+    now_utc = datetime.now(timezone.utc)
     final_by_schedule: dict[int, dict[str, Any]] = {}
     final_rank_by_schedule: dict[int, tuple[int, float]] = {}
     for row in rows:
-        show_time = parse_event_datetime(row.get("show_datetime"))
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         if show_time and show_time <= now_utc:
             schedule_id = int(row["schedule_id"])
             session = performance_snapshot_to_session(row)
@@ -1619,7 +1634,7 @@ def run_daily_snapshots() -> dict[str, Any]:
     return {"trackedEvents": len(events), "results": results}
 
 
-def run_final_snapshots(window_minutes: int = 20) -> dict[str, Any]:
+def run_final_snapshots(window_minutes: int = 15) -> dict[str, Any]:
     events = tracked_events()
     now_utc = datetime.now(timezone.utc)
     window_end = now_utc + timedelta(minutes=window_minutes)
@@ -1886,7 +1901,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "Invalid snapshot secret."})
             return
         try:
-            window_raw = params.get("windowMinutes", ["20"])[0]
+            window_raw = params.get("windowMinutes", ["15"])[0]
             window_minutes = max(1, min(int(window_raw), 60))
             self.send_json(200, run_final_snapshots(window_minutes))
         except StorageError as exc:

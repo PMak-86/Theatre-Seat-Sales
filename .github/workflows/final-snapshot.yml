@@ -12,4 +12,4 @@ jobs:
       - name: Capture performances nearing showtime
         run: |
           curl --fail --show-error --silent \
-            "${{ secrets.RENDER_APP_URL }}/api/snapshot/finals?secret=${{ secrets.SNAPSHOT_SECRET }}&windowMinutes=20"
+            "${{ secrets.RENDER_APP_URL }}/api/snapshot/finals?secret=${{ secrets.SNAPSHOT_SECRET }}&windowMinutes=15"
