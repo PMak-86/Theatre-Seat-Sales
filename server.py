@@ -259,6 +259,17 @@ def parse_performance_wall_datetime(value: str | None) -> datetime | None:
     return parsed.replace(tzinfo=timezone(timedelta(hours=offset))).astimezone(timezone.utc)
 
 
+def performance_wall_datetime_label(value: str | None) -> str | None:
+    if not value:
+        return None
+    text = str(value).replace("Z", "+00:00")
+    if "+" in text:
+        return text.rsplit("+", 1)[0]
+    if len(text) > 19 and text[19] == "-":
+        return text[:19]
+    return text
+
+
 def recompute_summary(data: dict[str, Any]) -> None:
     sessions = data.get("sessions") or []
     total_seats = sum(int(item.get("totalSeats") or 0) for item in sessions)
@@ -1442,7 +1453,7 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     breakdown, seat_map = parse_performance_snapshot_details(row.get("breakdown"))
     session = {
         "scheduleId": int(row["schedule_id"]),
-        "dateTime": row.get("show_datetime"),
+        "dateTime": performance_wall_datetime_label(row.get("show_datetime")),
         "description": row.get("description"),
         "totalSeats": int(row.get("total_seats") or 0),
         "availableSeats": int(row.get("available") or 0),
