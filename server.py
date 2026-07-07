@@ -1422,6 +1422,7 @@ def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 20)
 
 def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = row.get("event_snapshots") or {}
+    source = str(snapshot.get("source") or "")
     breakdown, seat_map = parse_performance_snapshot_details(row.get("breakdown"))
     session = {
         "scheduleId": int(row["schedule_id"]),
@@ -1439,10 +1440,27 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
         "breakdown": breakdown,
         "isFinal": True,
         "finalSnapshotCapturedAt": snapshot.get("captured_at"),
+        "finalSnapshotSource": source,
+        "finalSnapshotIsFallback": source != "final",
     }
     if seat_map:
         session["seatMap"] = seat_map
     return session
+
+
+def finalized_snapshot_rank(row: dict[str, Any], show_time: datetime) -> tuple[int, float]:
+    snapshot = row.get("event_snapshots") or {}
+    source = str(snapshot.get("source") or "")
+    captured_at = parse_event_datetime(snapshot.get("captured_at"))
+    if not captured_at:
+        return (0, 0.0)
+    if source == "final":
+        priority = 3
+    elif captured_at <= show_time:
+        priority = 2
+    else:
+        priority = 1
+    return (priority, captured_at.timestamp())
 
 
 def attach_finalized_sessions(data: dict[str, Any]) -> None:
@@ -1459,30 +1477,31 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not tracked:
         return
 
+    now_utc = datetime.now(timezone.utc)
     rows = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked[0]['id']}"
+        f"&show_datetime=lte.{quote(now_utc.isoformat(), safe='')}"
         "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
         "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,"
         "breakdown,event_snapshots!inner(source,captured_at)"
-        "&event_snapshots.source=eq.final"
         "&order=show_datetime.asc"
     )
     if not rows:
         return
 
-    now_utc = datetime.now(timezone.utc)
     final_by_schedule: dict[int, dict[str, Any]] = {}
+    final_rank_by_schedule: dict[int, tuple[int, float]] = {}
     for row in rows:
         show_time = parse_event_datetime(row.get("show_datetime"))
         if show_time and show_time <= now_utc:
             schedule_id = int(row["schedule_id"])
             session = performance_snapshot_to_session(row)
-            existing = final_by_schedule.get(schedule_id)
-            existing_at = parse_event_datetime(existing.get("finalSnapshotCapturedAt")) if existing else None
-            session_at = parse_event_datetime(session.get("finalSnapshotCapturedAt"))
-            if existing is None or (session_at and (existing_at is None or session_at > existing_at)):
+            rank = finalized_snapshot_rank(row, show_time)
+            existing_rank = final_rank_by_schedule.get(schedule_id)
+            if existing_rank is None or rank > existing_rank:
                 final_by_schedule[schedule_id] = session
+                final_rank_by_schedule[schedule_id] = rank
 
     if not final_by_schedule:
         return

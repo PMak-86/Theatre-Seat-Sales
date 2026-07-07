@@ -507,9 +507,12 @@ function baselineLabel(value) {
 
 function finalNumbersBadge(session) {
   if (!session.isFinal) return "";
+  const sourceNote = session.finalSnapshotIsFallback
+    ? "using latest stored snapshot"
+    : "using final pre-show snapshot";
   const captured = session.finalSnapshotCapturedAt
-    ? `Final snapshot captured ${formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt))}`
-    : "Final snapshot numbers";
+    ? `Final numbers ${sourceNote}, captured ${formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt))}`
+    : `Final numbers ${sourceNote}`;
   return `<span class="final-badge" title="${escapeHtml(captured)}">Final numbers</span>`;
 }
 
