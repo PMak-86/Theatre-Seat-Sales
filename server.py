@@ -435,14 +435,14 @@ def trybooking_general_admission_session(
     fallback_capacity: int = 0,
 ) -> dict[str, Any]:
     available = max(int(availability or 0), 0)
-    total = fallback_capacity if is_sold_out and fallback_capacity else 0
+    total = fallback_capacity if fallback_capacity and (is_sold_out or fallback_capacity >= available) else 0
     capacity_unknown = total == 0
-    effective_sold = total if is_sold_out and total else 0
-    effective_percent = 100 if is_sold_out and total else 0
+    effective_sold = max(total - available, 0) if total else 0
+    effective_percent = (effective_sold / total * 100) if total else 0
     price_min, price_max = parse_price_values(session.get("priceText", ""))
     basis = (
         "TryBooking marked this general-admission performance as sold out. "
-        "The exact paid ticket count is only available when a previous snapshot supplied capacity."
+        "Capacity is reused from the best matching stored snapshot when available."
         if is_sold_out
         else "TryBooking general-admission page exposes remaining availability but not total capacity, so sold seats cannot be calculated from the public page alone."
     )
@@ -1132,6 +1132,57 @@ def trybooking_sessions(event_id: int, landing_url: str) -> list[dict[str, str]]
     return sessions
 
 
+def trybooking_history_key(date_time: str | None, description: str | None) -> tuple[str, str] | None:
+    wall_time = performance_wall_datetime_label(date_time)
+    if not wall_time:
+        return None
+    label = re.sub(r"\s+", " ", str(description or "").strip().lower())
+    return (wall_time, label)
+
+
+def trybooking_session_history_key(session: dict[str, str], timezone_offset: str) -> tuple[str, str] | None:
+    try:
+        date_time = trybooking_session_datetime(session["date"], session.get("time", ""), timezone_offset)
+    except Exception:
+        return None
+    return trybooking_history_key(date_time, session.get("time"))
+
+
+def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[str, str], int], int]:
+    if not storage_enabled():
+        return {}, 0
+    try:
+        tracked = supabase_request(
+            "tracked_events"
+            f"?event_url=eq.{quote(event_url, safe='')}"
+            "&select=id"
+            "&order=last_seen_at.desc"
+            "&limit=1"
+        )
+        if not tracked:
+            return {}, 0
+        rows = supabase_request(
+            "performance_snapshots"
+            f"?tracked_event_id=eq.{tracked[0]['id']}"
+            "&select=show_datetime,description,total_seats"
+            "&order=show_datetime.asc"
+        )
+    except StorageError:
+        return {}, 0
+
+    hints: dict[tuple[str, str], int] = {}
+    event_capacity = 0
+    for row in rows or []:
+        total = int(row.get("total_seats") or 0)
+        if total <= 0:
+            continue
+        event_capacity = max(event_capacity, total)
+        key = trybooking_history_key(row.get("show_datetime"), row.get("description"))
+        if key:
+            hints[key] = max(hints.get(key, 0), total)
+    return hints, event_capacity
+
+
 def analyse_trybooking_session(
     event_id: int,
     session: dict[str, str],
@@ -1253,11 +1304,13 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
     timezone_offset = trybooking_timezone_offset(landing_html)
     raw_sessions = trybooking_sessions(event_id, landing_url)
     linked_sessions: dict[int, dict[str, Any]] = {}
-    capacity_hint = 0
+    history_capacity_hints, capacity_hint = trybooking_capacity_hints_from_history(landing_url)
     for session in raw_sessions:
         if not session.get("href"):
             continue
-        analysed = analyse_trybooking_session(event_id, session, timezone_offset)
+        session_key = trybooking_session_history_key(session, timezone_offset)
+        session_capacity_hint = history_capacity_hints.get(session_key, capacity_hint) if session_key else capacity_hint
+        analysed = analyse_trybooking_session(event_id, session, timezone_offset, session_capacity_hint)
         linked_sessions[int(analysed["scheduleId"])] = analysed
         if not analysed.get("capacityUnknown"):
             capacity_hint = max(capacity_hint, int(analysed.get("totalSeats") or 0))
@@ -1268,7 +1321,9 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
         if schedule_id in linked_sessions:
             sessions.append(linked_sessions[schedule_id])
         else:
-            sessions.append(analyse_trybooking_session(event_id, session, timezone_offset, capacity_hint))
+            session_key = trybooking_session_history_key(session, timezone_offset)
+            session_capacity_hint = history_capacity_hints.get(session_key, capacity_hint) if session_key else capacity_hint
+            sessions.append(analyse_trybooking_session(event_id, session, timezone_offset, session_capacity_hint))
     sessions.sort(key=lambda item: item.get("dateTime") or "")
 
     total_seats = sum(item["totalSeats"] for item in sessions)
