@@ -457,6 +457,14 @@ td:nth-child(2) {
   width: 15%;
 }
 
+.session-row td:nth-child(2) {
+  white-space: normal;
+}
+
+.session-row td:nth-child(2) > span:first-child {
+  display: block;
+}
+
 th:nth-child(3),
 td:nth-child(3) {
   width: 10%;
@@ -546,7 +554,7 @@ td.numeric {
 .final-badge {
   display: inline-flex;
   width: fit-content;
-  margin-left: 8px;
+  margin: 4px auto 0;
   padding: 3px 7px;
   border: 1px solid #c7d8ca;
   border-radius: 999px;
