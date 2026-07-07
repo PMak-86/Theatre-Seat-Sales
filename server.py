@@ -1683,6 +1683,7 @@ def run_daily_snapshots() -> dict[str, Any]:
     for event in events:
         try:
             data = analyse_any_event(event["event_url"])
+            attach_finalized_sessions(data)
             stored = store_snapshot(data, "daily")
             results.append({
                 "eventUrl": event["event_url"],
@@ -1790,18 +1791,18 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         "event_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
         "&source=eq.daily"
-        "&select=captured_at,total_seats,actual_sold,effective_sold,unavailable,available,"
+        "&select=id,captured_at,total_seats,actual_sold,effective_sold,unavailable,available,"
         "actual_sold_percent,effective_sold_percent,unavailable_percent,source"
         "&order=captured_at.asc"
     )
-    daily_snapshots = daily_snapshot_series(snapshots)
     performances = supabase_request(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
-        "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
-        "unavailable,available,effective_sold_percent,event_snapshots(captured_at)"
+        "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
+        "unavailable,available,effective_sold_percent,event_snapshots(id,source,captured_at)"
         "&order=show_datetime.asc"
     )
+    daily_snapshots = corrected_daily_snapshot_series(snapshots, performances)
     return {
         "event": tracked_event,
         "snapshots": daily_snapshots,
@@ -1858,6 +1859,86 @@ def daily_snapshot_series(snapshots: list[dict[str, Any]]) -> list[dict[str, Any
         local_date = snapshot_local_date(snapshot)
         by_date[local_date] = {**snapshot, "local_date": local_date}
     return [by_date[key] for key in sorted(by_date)]
+
+
+def snapshot_source(row: dict[str, Any]) -> str:
+    snapshot = row.get("event_snapshots") or {}
+    return str(snapshot.get("source") or "")
+
+
+def snapshot_captured_at(row: dict[str, Any]) -> datetime | None:
+    snapshot = row.get("event_snapshots") or {}
+    return parse_event_datetime(snapshot.get("captured_at"))
+
+
+def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
+    best: dict[int, dict[str, Any]] = {}
+    ranks: dict[int, tuple[int, float]] = {}
+    for row in performances or []:
+        schedule_id = int(row.get("schedule_id") or 0)
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
+        captured_at = snapshot_captured_at(row)
+        if not schedule_id or not show_time or not captured_at:
+            continue
+        source = snapshot_source(row)
+        if source == "final":
+            priority = 3
+        elif captured_at <= show_time:
+            priority = 2
+        else:
+            continue
+        rank = (priority, captured_at.timestamp())
+        if schedule_id not in ranks or rank > ranks[schedule_id]:
+            best[schedule_id] = row
+            ranks[schedule_id] = rank
+    return best
+
+
+def add_performance_to_snapshot(snapshot: dict[str, Any], row: dict[str, Any]) -> None:
+    snapshot["total_seats"] = int(snapshot.get("total_seats") or 0) + int(row.get("total_seats") or 0)
+    snapshot["actual_sold"] = int(snapshot.get("actual_sold") or 0) + int(row.get("actual_sold") or 0)
+    snapshot["effective_sold"] = int(snapshot.get("effective_sold") or 0) + int(row.get("effective_sold") or 0)
+    snapshot["unavailable"] = int(snapshot.get("unavailable") or 0) + int(row.get("unavailable") or 0)
+    snapshot["available"] = int(snapshot.get("available") or 0) + int(row.get("available") or 0)
+
+
+def recompute_snapshot_percentages(snapshot: dict[str, Any]) -> None:
+    total = int(snapshot.get("total_seats") or 0)
+    actual = int(snapshot.get("actual_sold") or 0)
+    effective = int(snapshot.get("effective_sold") or 0)
+    unavailable = int(snapshot.get("unavailable") or 0)
+    snapshot["actual_sold_percent"] = (actual / total * 100) if total else 0
+    snapshot["effective_sold_percent"] = (effective / total * 100) if total else 0
+    snapshot["unavailable_percent"] = ((actual + unavailable) / total * 100) if total else 0
+
+
+def corrected_daily_snapshot_series(
+    snapshots: list[dict[str, Any]],
+    performances: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    finalized = best_finalized_performance_rows(performances)
+    daily_schedule_ids: dict[str, set[int]] = {}
+    for row in performances or []:
+        snapshot_id = str(row.get("event_snapshot_id") or "")
+        if not snapshot_id or snapshot_source(row) != "daily":
+            continue
+        daily_schedule_ids.setdefault(snapshot_id, set()).add(int(row.get("schedule_id") or 0))
+
+    corrected = []
+    for snapshot in snapshots or []:
+        item = dict(snapshot)
+        snapshot_id = str(item.get("id") or "")
+        captured_at = parse_event_datetime(item.get("captured_at"))
+        included = daily_schedule_ids.get(snapshot_id, set())
+        if captured_at:
+            for schedule_id, row in finalized.items():
+                show_time = parse_performance_wall_datetime(row.get("show_datetime"))
+                if show_time and show_time <= captured_at and schedule_id not in included:
+                    add_performance_to_snapshot(item, row)
+        recompute_snapshot_percentages(item)
+        corrected.append(item)
+
+    return daily_snapshot_series(corrected)
 
 
 def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
