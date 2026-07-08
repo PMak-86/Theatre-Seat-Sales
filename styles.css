@@ -1390,8 +1390,8 @@ td.numeric {
   }
 
   .art-house-map {
-    grid-template-columns: minmax(58px, 0.25fr) minmax(190px, 1fr) minmax(58px, 0.25fr);
-    gap: 4px;
+    grid-template-columns: minmax(44px, 0.22fr) minmax(180px, 1fr) minmax(44px, 0.22fr);
+    gap: 3px;
     padding: 4px;
   }
 
@@ -1454,12 +1454,12 @@ td.numeric {
   .art-house-balcony {
     padding: 5px;
     border-width: 2px;
-    transform: rotate(-22deg) scale(0.92);
+    transform: rotate(-18deg) scale(0.78);
     transform-origin: center;
   }
 
   .art-house-balcony-one {
-    transform: rotate(22deg) scale(0.92);
+    transform: rotate(18deg) scale(0.78);
   }
 
   .art-house-balcony-title {
