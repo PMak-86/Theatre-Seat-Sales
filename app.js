@@ -350,7 +350,15 @@ function renderRedTreeSeatMap(seatMap) {
   `;
 }
 
-function renderArtHouseRows(seatsByPosition, section, rows, blockClass) {
+function artHouseRowSeatCount(seatsByPosition, section, rows) {
+  return Math.max(
+    1,
+    ...rows.map((row) => seatsByPosition.filter((seat) => seat.section === section && seat.row === row).length)
+  );
+}
+
+function renderArtHouseRows(seatsByPosition, section, rows, blockClass, seatCount = null) {
+  const fixedSeatCount = seatCount || artHouseRowSeatCount(seatsByPosition, section, rows);
   return rows
     .map((row) => {
       const rowSeats = seatsByPosition
@@ -370,7 +378,7 @@ function renderArtHouseRows(seatsByPosition, section, rows, blockClass) {
       return `
         <div class="art-house-row ${blockClass}-row">
           <span class="art-house-row-label">${escapeHtml(row)}</span>
-          <div class="art-house-seat-block ${blockClass}-seats" style="--art-house-seat-count: ${Math.max(1, rowSeats.length)}">${seats}</div>
+          <div class="art-house-seat-block ${blockClass}-seats" style="--art-house-seat-count: ${fixedSeatCount}">${seats}</div>
           <span class="art-house-row-label">${escapeHtml(row)}</span>
         </div>
       `;
@@ -454,8 +462,11 @@ function renderArtHouseSeatMap(seatMap) {
   const upperRows = ["T", "S", "R", "Q", "P", "N", "M", "L", "K", "J"];
   const lowerRows = ["H", "G", "F", "E", "D", "C", "B", "A"];
   const balconyRows = ["F", "E", "D", "C", "B", "A"];
-  const coordinateStalls = seatsByPosition.some(
-    (seat) => seat.section === "Stalls" && Number.isFinite(seat.visualX) && Number.isFinite(seat.visualY)
+  const upperSeatCount = artHouseRowSeatCount(seatsByPosition, "Stalls", rowOrder("Stalls", upperRows));
+  const lowerSeatCount = artHouseRowSeatCount(seatsByPosition, "Stalls", rowOrder("Stalls", lowerRows));
+  const balconySeatCount = Math.max(
+    artHouseRowSeatCount(seatsByPosition, "Balcony 1", rowOrder("Balcony 1", balconyRows)),
+    artHouseRowSeatCount(seatsByPosition, "Balcony 2", rowOrder("Balcony 2", balconyRows))
   );
   const legend = (seatMap.legend || [])
     .map((item) => `
@@ -476,23 +487,21 @@ function renderArtHouseSeatMap(seatMap) {
         <div class="art-house-stalls-label">Stalls</div>
         <div class="art-house-balcony art-house-balcony-two">
           <div class="art-house-balcony-title">Balcony 2</div>
-          ${renderArtHouseRows(seatsByPosition, "Balcony 2", rowOrder("Balcony 2", balconyRows), "art-house-balcony")}
+          ${renderArtHouseRows(seatsByPosition, "Balcony 2", rowOrder("Balcony 2", balconyRows), "art-house-balcony", balconySeatCount)}
         </div>
-        ${coordinateStalls ? renderArtHouseCoordinateStalls(seatsByPosition) : `
         <div class="art-house-stalls">
           <div class="art-house-stalls-upper">
-            ${renderArtHouseRows(seatsByPosition, "Stalls", rowOrder("Stalls", upperRows), "art-house-stalls-upper")}
+            ${renderArtHouseRows(seatsByPosition, "Stalls", rowOrder("Stalls", upperRows), "art-house-stalls-upper", upperSeatCount)}
           </div>
           <div class="art-house-stalls-gap"></div>
           <div class="art-house-stalls-lower">
-            ${renderArtHouseRows(seatsByPosition, "Stalls", rowOrder("Stalls", lowerRows), "art-house-stalls-lower")}
+            ${renderArtHouseRows(seatsByPosition, "Stalls", rowOrder("Stalls", lowerRows), "art-house-stalls-lower", lowerSeatCount)}
           </div>
           <div class="art-house-stage">Stage</div>
         </div>
-        `}
         <div class="art-house-balcony art-house-balcony-one">
           <div class="art-house-balcony-title">Balcony 1</div>
-          ${renderArtHouseRows(seatsByPosition, "Balcony 1", rowOrder("Balcony 1", balconyRows), "art-house-balcony")}
+          ${renderArtHouseRows(seatsByPosition, "Balcony 1", rowOrder("Balcony 1", balconyRows), "art-house-balcony", balconySeatCount)}
         </div>
       </div>
       <div class="seat-map-legend">${legend}</div>

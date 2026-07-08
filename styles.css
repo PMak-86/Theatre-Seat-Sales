@@ -796,6 +796,7 @@ td.numeric {
 }
 
 .art-house-map {
+  --art-house-dot-size: 9px;
   display: grid;
   grid-template-columns: minmax(90px, 0.34fr) minmax(280px, 1fr) minmax(90px, 0.34fr);
   grid-template-areas:
@@ -853,8 +854,15 @@ td.numeric {
 
 .art-house-seat-block {
   display: grid;
-  grid-template-columns: repeat(var(--art-house-seat-count), minmax(4px, 1fr));
+  grid-template-columns: repeat(var(--art-house-seat-count), var(--art-house-dot-size));
   gap: 2px;
+  justify-content: center;
+}
+
+.art-house-seat-block .seat-dot,
+.art-house-seat-block .seat-empty {
+  width: var(--art-house-dot-size);
+  min-width: 0;
 }
 
 .art-house-stalls-coordinate {
@@ -1388,6 +1396,7 @@ td.numeric {
   }
 
   .art-house-map {
+    --art-house-dot-size: 5px;
     grid-template-columns: minmax(44px, 0.22fr) minmax(180px, 1fr) minmax(44px, 0.22fr);
     gap: 3px;
     padding: 4px;
@@ -1510,6 +1519,7 @@ td.numeric {
 
 @media (max-height: 520px) and (orientation: landscape) {
   .art-house-map {
+    --art-house-dot-size: 6px;
     width: min(100%, 560px);
     grid-template-columns: minmax(70px, 0.24fr) minmax(240px, 1fr) minmax(70px, 0.24fr);
   }
