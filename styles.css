@@ -1508,6 +1508,22 @@ td.numeric {
   }
 }
 
+@media (max-height: 520px) and (orientation: landscape) {
+  .art-house-map {
+    width: min(100%, 560px);
+    grid-template-columns: minmax(70px, 0.24fr) minmax(240px, 1fr) minmax(70px, 0.24fr);
+  }
+
+  .seat-dot.art-house-coordinate-seat {
+    width: clamp(4px, 1.6%, 7px);
+  }
+
+  .art-house-coordinate-stage {
+    padding: 8px 5px;
+    font-size: 16px;
+  }
+}
+
 @media (max-width: 420px) {
   .app {
     padding: 10px;
