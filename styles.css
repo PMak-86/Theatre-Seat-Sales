@@ -920,12 +920,10 @@ td.numeric {
   align-self: center;
   padding: 8px;
   border: 3px solid #aeb3b7;
-  transform: rotate(-26deg);
 }
 
 .art-house-balcony-one {
   grid-area: balcony1;
-  transform: rotate(26deg);
 }
 
 .art-house-balcony-two {
@@ -1454,12 +1452,6 @@ td.numeric {
   .art-house-balcony {
     padding: 5px;
     border-width: 2px;
-    transform: rotate(-18deg) scale(0.78);
-    transform-origin: center;
-  }
-
-  .art-house-balcony-one {
-    transform: rotate(18deg) scale(0.78);
   }
 
   .art-house-balcony-title {
