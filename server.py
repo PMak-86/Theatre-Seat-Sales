@@ -1484,7 +1484,7 @@ def store_snapshot(
         for session in data["sessions"]
         if schedule_ids is None or int(session["scheduleId"]) in schedule_ids
     ]
-    include_seat_map = source == "final"
+    include_seat_map = source in {"final", "retired"}
     if include_seat_map:
         validate_final_snapshot_sessions(data, sessions_to_store)
 
@@ -1599,6 +1599,8 @@ def finalized_snapshot_rank(row: dict[str, Any], show_time: datetime) -> tuple[i
     if not captured_at:
         return (0, 0.0)
     if source == "final":
+        priority = 4
+    elif source == "retired":
         priority = 3
     elif captured_at <= show_time:
         priority = 2
@@ -1805,6 +1807,104 @@ def run_daily_snapshots() -> dict[str, Any]:
     return {"trackedEvents": len(events), "results": results}
 
 
+def retired_snapshot_candidates(
+    tracked_event_id: str,
+    live_schedule_ids: set[int],
+    now_utc: datetime,
+) -> list[dict[str, Any]]:
+    snapshots = supabase_request(
+        "event_snapshots"
+        f"?tracked_event_id=eq.{tracked_event_id}"
+        "&source=in.(search,daily)"
+        "&select=id"
+        "&order=captured_at.desc"
+        "&limit=1"
+    )
+    if not snapshots:
+        return []
+
+    latest_rows = supabase_select_all(
+        "performance_snapshots"
+        f"?event_snapshot_id=eq.{snapshots[0]['id']}"
+        "&select=schedule_id,show_datetime,description"
+        "&order=show_datetime.asc,schedule_id.asc"
+    )
+    completed_rows = supabase_select_all(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked_event_id}"
+        "&select=schedule_id,breakdown,event_snapshots!inner(source)"
+        "&event_snapshots.source=in.(final,retired)"
+        "&order=schedule_id.asc"
+    )
+    completed_with_maps = set()
+    for row in completed_rows:
+        _, seat_map, _ = parse_performance_snapshot_details(row.get("breakdown"))
+        if seat_map and seat_map.get("seats"):
+            completed_with_maps.add(int(row["schedule_id"]))
+
+    candidates = []
+    for row in latest_rows:
+        schedule_id = int(row["schedule_id"])
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
+        if (
+            show_time
+            and show_time <= now_utc
+            and schedule_id not in live_schedule_ids
+            and schedule_id not in completed_with_maps
+        ):
+            candidates.append(row)
+    return candidates
+
+
+def analyse_retired_ticketsearch_sessions(
+    data: dict[str, Any],
+    tracked_event_id: str,
+    now_utc: datetime,
+) -> list[dict[str, Any]]:
+    if data.get("provider") != "ticketsearch":
+        return []
+
+    live_schedule_ids = {
+        int(session["scheduleId"])
+        for session in data.get("sessions", [])
+        if session.get("scheduleId") is not None
+    }
+    candidates = retired_snapshot_candidates(tracked_event_id, live_schedule_ids, now_utc)
+    if not candidates:
+        return []
+
+    org, mask_url, event_id = parse_event_input(data["eventUrl"])
+    token = get_guest_token(org, mask_url)
+    event = api_result(
+        request_json(
+            f"{API_BASE}/OnlineApi/SalesEventDetail/GetEventDetail?eventId={event_id}",
+            token,
+            origin=mask_url,
+            referer=data["eventUrl"],
+        ),
+        "SalesEventDetail",
+    )
+    if not event:
+        raise TicketSearchError("TicketSearch did not return event details for retired schedules.")
+
+    recovered = []
+    for candidate in candidates:
+        recovered.append(
+            analyse_session(
+                token,
+                event_id,
+                event,
+                {
+                    "EventScheduleId": int(candidate["schedule_id"]),
+                    "ScheduleStartDate": candidate.get("show_datetime"),
+                    "SessionDescription": candidate.get("description"),
+                },
+                mask_url,
+            )
+        )
+    return recovered
+
+
 def run_final_snapshots(
     window_minutes: int = 15,
     late_grace_minutes: int = 30,
@@ -1844,23 +1944,32 @@ def run_final_snapshots(
                 ):
                     due_sessions.append(schedule_id)
 
+            final_snapshot = None
             if due_sessions:
                 stored = store_snapshot(data, "final", set(due_sessions))
-                results.append({
-                    "eventUrl": event["event_url"],
-                    "eventName": data.get("eventName"),
-                    "ok": True,
-                    "finalizedSchedules": due_sessions,
-                    "snapshot": stored,
-                })
-            else:
-                results.append({
-                    "eventUrl": event["event_url"],
-                    "eventName": data.get("eventName"),
-                    "ok": True,
-                    "finalizedSchedules": [],
-                    "snapshot": None,
-                })
+                final_snapshot = stored
+
+            retired_sessions = analyse_retired_ticketsearch_sessions(data, event["id"], now_utc)
+            retired_snapshot = None
+            if retired_sessions:
+                retired_data = {
+                    **data,
+                    "sessions": retired_sessions,
+                    "summary": {},
+                }
+                recompute_summary(retired_data)
+                retired_data["dateRange"] = data.get("dateRange")
+                retired_snapshot = store_snapshot(retired_data, "retired")
+
+            results.append({
+                "eventUrl": event["event_url"],
+                "eventName": data.get("eventName"),
+                "ok": True,
+                "finalizedSchedules": due_sessions,
+                "snapshot": final_snapshot,
+                "retiredSchedules": [int(session["scheduleId"]) for session in retired_sessions],
+                "retiredSnapshot": retired_snapshot,
+            })
         except Exception as exc:
             results.append({
                 "eventUrl": event["event_url"],
@@ -1999,6 +2108,8 @@ def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[
             continue
         source = snapshot_source(row)
         if source == "final":
+            priority = 4
+        elif source == "retired":
             priority = 3
         elif captured_at <= show_time:
             priority = 2
