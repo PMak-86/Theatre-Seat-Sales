@@ -1428,6 +1428,26 @@ def parse_performance_snapshot_details(
     return [], None, None
 
 
+def validate_final_snapshot_sessions(
+    data: dict[str, Any],
+    sessions: list[dict[str, Any]],
+) -> None:
+    if data.get("provider") != "ticketsearch" or data.get("layoutType") != "ReservedSeating":
+        return
+
+    missing_maps = []
+    for session in sessions:
+        seat_map = session.get("seatMap")
+        seats = seat_map.get("seats") if isinstance(seat_map, dict) else None
+        if not isinstance(seats, list) or not seats:
+            missing_maps.append(int(session["scheduleId"]))
+    if missing_maps:
+        raise StorageError(
+            "Final snapshot was not stored because reserved seat-map data was missing "
+            f"for schedules: {', '.join(str(item) for item in missing_maps)}."
+        )
+
+
 def store_snapshot(
     data: dict[str, Any],
     source: str = "search",
@@ -1459,6 +1479,15 @@ def store_snapshot(
     )
     tracked = tracked_rows[0]
     summary = data["summary"]
+    sessions_to_store = [
+        session
+        for session in data["sessions"]
+        if schedule_ids is None or int(session["scheduleId"]) in schedule_ids
+    ]
+    include_seat_map = source == "final"
+    if include_seat_map:
+        validate_final_snapshot_sessions(data, sessions_to_store)
+
     snapshot_payload = {
         "tracked_event_id": tracked["id"],
         "performances": summary["performances"],
@@ -1479,12 +1508,6 @@ def store_snapshot(
         "return=representation",
     )
     snapshot = snapshot_rows[0]
-    sessions_to_store = [
-        session
-        for session in data["sessions"]
-        if schedule_ids is None or int(session["scheduleId"]) in schedule_ids
-    ]
-    include_seat_map = source == "final"
     performance_payload = [
         {
             "event_snapshot_id": snapshot["id"],
