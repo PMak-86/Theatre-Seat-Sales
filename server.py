@@ -1568,6 +1568,36 @@ def finalized_snapshot_rank(row: dict[str, Any], show_time: datetime) -> tuple[i
     return (priority, captured_at.timestamp())
 
 
+def backfill_missing_revenue(
+    finalized_sessions: dict[int, dict[str, Any]],
+    live_sessions: list[dict[str, Any]],
+) -> None:
+    estimates = [
+        session.get("revenueEstimate")
+        for session in live_sessions
+        if session.get("revenueEstimate") and int(session["revenueEstimate"].get("seatCount") or 0) > 0
+    ]
+    priced_seats = sum(int(estimate["seatCount"]) for estimate in estimates)
+    if not priced_seats:
+        return
+
+    price_min = sum(float(estimate["minAmount"]) for estimate in estimates) / priced_seats
+    price_max = sum(float(estimate["maxAmount"]) for estimate in estimates) / priced_seats
+    basis = (
+        "Historical estimate reconstructed from this event's current weighted sold-seat "
+        "price range because the original snapshot predates revenue persistence."
+    )
+    for session in finalized_sessions.values():
+        if session.get("revenueEstimate"):
+            continue
+        session["revenueEstimate"] = revenue_estimate(
+            int(session.get("ticketsSold") or 0),
+            price_min,
+            price_max,
+            basis,
+        )
+
+
 def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not storage_enabled():
         return
@@ -1610,9 +1640,11 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not final_by_schedule:
         return
 
+    live_sessions = data.get("sessions", [])
+    backfill_missing_revenue(final_by_schedule, live_sessions)
     live_by_schedule = {
         int(session["scheduleId"]): session
-        for session in data.get("sessions", [])
+        for session in live_sessions
         if session.get("scheduleId") is not None
     }
     live_by_schedule.update(final_by_schedule)
