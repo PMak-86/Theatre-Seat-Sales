@@ -1598,9 +1598,9 @@ def finalized_snapshot_rank(row: dict[str, Any], show_time: datetime) -> tuple[i
     captured_at = parse_event_datetime(snapshot.get("captured_at"))
     if not captured_at:
         return (0, 0.0)
-    if source == "final":
+    if source == "retired":
         priority = 4
-    elif source == "retired":
+    elif source == "final":
         priority = 3
     elif captured_at <= show_time:
         priority = 2
@@ -1811,6 +1811,8 @@ def retired_snapshot_candidates(
     tracked_event_id: str,
     live_schedule_ids: set[int],
     now_utc: datetime,
+    refresh_hours: int = 24,
+    refresh_interval_minutes: int = 60,
 ) -> list[dict[str, Any]]:
     snapshots = supabase_request(
         "event_snapshots"
@@ -1832,26 +1834,34 @@ def retired_snapshot_candidates(
     completed_rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
-        "&select=schedule_id,breakdown,event_snapshots!inner(source)"
-        "&event_snapshots.source=in.(final,retired)"
-        "&order=schedule_id.asc"
+        "&select=event_snapshot_id,schedule_id,event_snapshots!inner(source,captured_at)"
+        "&event_snapshots.source=eq.retired"
+        "&order=schedule_id.asc,event_snapshot_id.desc"
     )
-    completed_with_maps = set()
+    latest_retired_capture: dict[int, datetime] = {}
     for row in completed_rows:
-        _, seat_map, _ = parse_performance_snapshot_details(row.get("breakdown"))
-        if seat_map and seat_map.get("seats"):
-            completed_with_maps.add(int(row["schedule_id"]))
+        schedule_id = int(row["schedule_id"])
+        snapshot = row.get("event_snapshots") or {}
+        captured_at = parse_event_datetime(snapshot.get("captured_at"))
+        existing = latest_retired_capture.get(schedule_id)
+        if captured_at and (existing is None or captured_at > existing):
+            latest_retired_capture[schedule_id] = captured_at
 
     candidates = []
     for row in latest_rows:
         schedule_id = int(row["schedule_id"])
         show_time = parse_performance_wall_datetime(row.get("show_datetime"))
-        if (
-            show_time
-            and show_time <= now_utc
-            and schedule_id not in live_schedule_ids
-            and schedule_id not in completed_with_maps
-        ):
+        if not show_time or show_time > now_utc or schedule_id in live_schedule_ids:
+            continue
+
+        last_retired = latest_retired_capture.get(schedule_id)
+        show_age = now_utc - show_time
+        refresh_due = (
+            last_retired is not None
+            and show_age <= timedelta(hours=refresh_hours)
+            and now_utc - last_retired >= timedelta(minutes=refresh_interval_minutes)
+        )
+        if last_retired is None or refresh_due:
             candidates.append(row)
     return candidates
 
@@ -2107,9 +2117,9 @@ def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[
         if not schedule_id or not show_time or not captured_at:
             continue
         source = snapshot_source(row)
-        if source == "final":
+        if source == "retired":
             priority = 4
-        elif source == "retired":
+        elif source == "final":
             priority = 3
         elif captured_at <= show_time:
             priority = 2
