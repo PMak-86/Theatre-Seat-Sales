@@ -1721,11 +1721,13 @@ def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
     total_delta = 0
     total_raw_delta = 0
     matched = False
-    now_utc = datetime.now(timezone.utc)
-
     for session in data.get("sessions", []):
-        show_time = parse_event_datetime(session.get("dateTime"))
-        if session.get("isFinal") or (show_time and show_time <= now_utc):
+        show_time = parse_performance_wall_datetime(session.get("dateTime"))
+        show_local_date = sydney_local_date(show_time) if show_time else None
+        if (
+            (show_local_date and show_local_date < current_local_date)
+            or (not show_local_date and session.get("isFinal"))
+        ):
             session["salesSinceDailySnapshot"] = 0
             session["salesSinceDailySnapshotRaw"] = 0
             session["dailySnapshotCapturedAt"] = baseline["captured_at"]
