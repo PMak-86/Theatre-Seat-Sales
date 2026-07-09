@@ -153,6 +153,21 @@ def supabase_request(
         raise StorageError(f"Could not connect to Supabase: {exc.reason}") from exc
 
 
+def supabase_select_all(path: str, page_size: int = 1000) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    separator = "&" if "?" in path else "?"
+
+    while True:
+        page = supabase_request(
+            f"{path}{separator}limit={page_size}&offset={offset}"
+        ) or []
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+
+
 def parse_event_input(value: str) -> tuple[str, str, int]:
     raw = value.strip()
     if not raw:
@@ -1161,7 +1176,7 @@ def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[s
         )
         if not tracked:
             return {}, 0
-        rows = supabase_request(
+        rows = supabase_select_all(
             "performance_snapshots"
             f"?tracked_event_id=eq.{tracked[0]['id']}"
             "&select=show_datetime,description,total_seats"
@@ -1483,7 +1498,7 @@ def store_snapshot(
 
 
 def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 15) -> set[int]:
-    rows = supabase_request(
+    rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
         "&select=schedule_id,show_datetime,event_snapshots!inner(source,captured_at)"
@@ -1559,7 +1574,7 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     if not tracked:
         return
 
-    rows = supabase_request(
+    rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked[0]['id']}"
         "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
@@ -1640,7 +1655,7 @@ def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
     if not baseline:
         return
 
-    performances = supabase_request(
+    performances = supabase_select_all(
         "performance_snapshots"
         f"?event_snapshot_id=eq.{baseline['id']}"
         "&select=schedule_id,actual_sold,effective_sold"
@@ -1795,7 +1810,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         "actual_sold_percent,effective_sold_percent,unavailable_percent,source"
         "&order=captured_at.asc"
     )
-    performances = supabase_request(
+    performances = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
         "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
