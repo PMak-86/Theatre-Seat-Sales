@@ -1395,20 +1395,26 @@ def analyse_any_event(value: str) -> dict[str, Any]:
 
 
 def performance_snapshot_details(session: dict[str, Any], include_seat_map: bool = False) -> Any:
-    details: dict[str, Any] = {"items": session.get("breakdown") or []}
+    details: dict[str, Any] = {
+        "items": session.get("breakdown") or [],
+        "revenueEstimate": session.get("revenueEstimate"),
+    }
     if include_seat_map and session.get("seatMap"):
         details["seatMap"] = session.get("seatMap")
     return details
 
 
-def parse_performance_snapshot_details(value: Any) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
+def parse_performance_snapshot_details(
+    value: Any,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any] | None]:
     if isinstance(value, dict):
         items = value.get("items") if isinstance(value.get("items"), list) else []
         seat_map = value.get("seatMap") if isinstance(value.get("seatMap"), dict) else None
-        return items, seat_map
+        revenue = value.get("revenueEstimate") if isinstance(value.get("revenueEstimate"), dict) else None
+        return items, seat_map, revenue
     if isinstance(value, list):
-        return value, None
-    return [], None
+        return value, None, None
+    return [], None, None
 
 
 def store_snapshot(
@@ -1520,7 +1526,7 @@ def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 15)
 def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = row.get("event_snapshots") or {}
     source = str(snapshot.get("source") or "")
-    breakdown, seat_map = parse_performance_snapshot_details(row.get("breakdown"))
+    breakdown, seat_map, revenue = parse_performance_snapshot_details(row.get("breakdown"))
     session = {
         "scheduleId": int(row["schedule_id"]),
         "dateTime": performance_wall_datetime_label(row.get("show_datetime")),
@@ -1540,6 +1546,8 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
         "finalSnapshotSource": source,
         "finalSnapshotIsFallback": source != "final",
     }
+    if revenue:
+        session["revenueEstimate"] = revenue
     if seat_map:
         session["seatMap"] = seat_map
     return session
