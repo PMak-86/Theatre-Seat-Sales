@@ -11,8 +11,8 @@ security definer
 set search_path = ''
 as $$
 begin
-  if secret_value is null or length(secret_value) < 16 then
-    raise exception 'Snapshot secret is missing or too short';
+  if secret_value is null or length(secret_value) = 0 then
+    raise exception 'Snapshot secret is missing';
   end if;
 
   if exists (
