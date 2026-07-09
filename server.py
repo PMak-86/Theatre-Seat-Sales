@@ -168,6 +168,17 @@ def supabase_select_all(path: str, page_size: int = 1000) -> list[dict[str, Any]
         offset += page_size
 
 
+def configure_supabase_cron_secret() -> bool:
+    if not storage_enabled() or not SNAPSHOT_SECRET:
+        return False
+    result = supabase_request(
+        "rpc/configure_theatre_snapshot_cron_secret",
+        "POST",
+        {"secret_value": SNAPSHOT_SECRET},
+    )
+    return bool(result)
+
+
 def parse_event_input(value: str) -> tuple[str, str, int]:
     raw = value.strip()
     if not raw:
@@ -2197,6 +2208,11 @@ class Handler(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8787"))
     host = "0.0.0.0" if os.environ.get("PORT") else "127.0.0.1"
+    try:
+        if configure_supabase_cron_secret():
+            print("Supabase Cron snapshot secret configured.")
+    except StorageError as exc:
+        print(f"Supabase Cron configuration warning: {exc}")
     server = ThreadingHTTPServer((host, port), Handler)
     print(f"Serving http://{host}:{port}")
     server.serve_forever()
