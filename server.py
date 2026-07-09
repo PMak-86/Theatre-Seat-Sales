@@ -1994,6 +1994,26 @@ def add_performance_to_snapshot(snapshot: dict[str, Any], row: dict[str, Any]) -
     snapshot["available"] = int(snapshot.get("available") or 0) + int(row.get("available") or 0)
 
 
+def replace_performance_in_snapshot(
+    snapshot: dict[str, Any],
+    current_row: dict[str, Any],
+    finalized_row: dict[str, Any],
+) -> None:
+    fields = {
+        "total_seats": "total_seats",
+        "actual_sold": "actual_sold",
+        "effective_sold": "effective_sold",
+        "unavailable": "unavailable",
+        "available": "available",
+    }
+    for snapshot_field, row_field in fields.items():
+        snapshot[snapshot_field] = (
+            int(snapshot.get(snapshot_field) or 0)
+            - int(current_row.get(row_field) or 0)
+            + int(finalized_row.get(row_field) or 0)
+        )
+
+
 def recompute_snapshot_percentages(snapshot: dict[str, Any]) -> None:
     total = int(snapshot.get("total_seats") or 0)
     actual = int(snapshot.get("actual_sold") or 0)
@@ -2009,23 +2029,29 @@ def corrected_daily_snapshot_series(
     performances: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     finalized = best_finalized_performance_rows(performances)
-    daily_schedule_ids: dict[str, set[int]] = {}
+    daily_performances: dict[str, dict[int, dict[str, Any]]] = {}
     for row in performances or []:
         snapshot_id = str(row.get("event_snapshot_id") or "")
         if not snapshot_id or snapshot_source(row) != "daily":
             continue
-        daily_schedule_ids.setdefault(snapshot_id, set()).add(int(row.get("schedule_id") or 0))
+        schedule_id = int(row.get("schedule_id") or 0)
+        daily_performances.setdefault(snapshot_id, {})[schedule_id] = row
 
     corrected = []
     for snapshot in snapshots or []:
         item = dict(snapshot)
         snapshot_id = str(item.get("id") or "")
         captured_at = parse_event_datetime(item.get("captured_at"))
-        included = daily_schedule_ids.get(snapshot_id, set())
+        included = daily_performances.get(snapshot_id, {})
         if captured_at:
             for schedule_id, row in finalized.items():
                 show_time = parse_performance_wall_datetime(row.get("show_datetime"))
-                if show_time and show_time <= captured_at and schedule_id not in included:
+                if not show_time or show_time > captured_at:
+                    continue
+                current_row = included.get(schedule_id)
+                if current_row:
+                    replace_performance_in_snapshot(item, current_row, row)
+                else:
                     add_performance_to_snapshot(item, row)
         recompute_snapshot_percentages(item)
         corrected.append(item)
