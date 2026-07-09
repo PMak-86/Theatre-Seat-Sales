@@ -1503,7 +1503,11 @@ def store_snapshot(
     }
 
 
-def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 15) -> set[int]:
+def final_snapshot_schedule_ids(
+    tracked_event_id: str,
+    window_minutes: int = 15,
+    late_grace_minutes: int = 30,
+) -> set[int]:
     rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
@@ -1518,7 +1522,7 @@ def final_snapshot_schedule_ids(tracked_event_id: str, window_minutes: int = 15)
         if not show_time or not captured_at:
             continue
         minutes_before_show = (show_time - captured_at).total_seconds() / 60
-        if 0 <= minutes_before_show <= window_minutes:
+        if -late_grace_minutes <= minutes_before_show <= window_minutes:
             finalized.add(int(row["schedule_id"]))
     return finalized
 
@@ -1704,8 +1708,15 @@ def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
     total_delta = 0
     total_raw_delta = 0
     matched = False
+    now_utc = datetime.now(timezone.utc)
 
     for session in data.get("sessions", []):
+        show_time = parse_event_datetime(session.get("dateTime"))
+        if session.get("isFinal") or (show_time and show_time <= now_utc):
+            session["salesSinceDailySnapshot"] = 0
+            session["salesSinceDailySnapshotRaw"] = 0
+            session["dailySnapshotCapturedAt"] = baseline["captured_at"]
+            continue
         baseline_sold = baseline_by_schedule.get(int(session["scheduleId"]))
         if baseline_sold is None:
             continue
@@ -1756,10 +1767,14 @@ def run_daily_snapshots() -> dict[str, Any]:
     return {"trackedEvents": len(events), "results": results}
 
 
-def run_final_snapshots(window_minutes: int = 15) -> dict[str, Any]:
+def run_final_snapshots(
+    window_minutes: int = 15,
+    late_grace_minutes: int = 30,
+) -> dict[str, Any]:
     events = tracked_events()
     now_utc = datetime.now(timezone.utc)
     window_end = now_utc + timedelta(minutes=window_minutes)
+    window_start = now_utc - timedelta(minutes=late_grace_minutes)
     results = []
 
     for event in events:
@@ -1774,15 +1789,19 @@ def run_final_snapshots(window_minutes: int = 15) -> dict[str, Any]:
                 })
                 continue
 
-            already_final = final_snapshot_schedule_ids(event["id"], window_minutes)
+            already_final = final_snapshot_schedule_ids(
+                event["id"],
+                window_minutes,
+                late_grace_minutes,
+            )
             data = analyse_any_event(event["event_url"])
             due_sessions = []
             for session in data.get("sessions", []):
                 schedule_id = int(session["scheduleId"])
-                show_time = parse_event_datetime(session.get("dateTime"))
+                show_time = parse_performance_wall_datetime(session.get("dateTime"))
                 if (
                     show_time
-                    and now_utc <= show_time <= window_end
+                    and window_start <= show_time <= window_end
                     and schedule_id not in already_final
                 ):
                     due_sessions.append(schedule_id)
@@ -1812,7 +1831,12 @@ def run_final_snapshots(window_minutes: int = 15) -> dict[str, Any]:
                 "error": str(exc),
             })
 
-    return {"trackedEvents": len(events), "windowMinutes": window_minutes, "results": results}
+    return {
+        "trackedEvents": len(events),
+        "windowMinutes": window_minutes,
+        "lateGraceMinutes": late_grace_minutes,
+        "results": results,
+    }
 
 
 def event_history(event_id: int | None = None, event_url: str | None = None) -> dict[str, Any]:
@@ -2105,7 +2129,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             window_raw = params.get("windowMinutes", ["15"])[0]
             window_minutes = max(1, min(int(window_raw), 60))
-            self.send_json(200, run_final_snapshots(window_minutes))
+            grace_raw = params.get("lateGraceMinutes", ["30"])[0]
+            late_grace_minutes = max(0, min(int(grace_raw), 120))
+            self.send_json(200, run_final_snapshots(window_minutes, late_grace_minutes))
         except StorageError as exc:
             self.send_json(500, {"error": str(exc)})
         except Exception as exc:
