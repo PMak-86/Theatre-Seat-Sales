@@ -1,8 +1,6 @@
 name: Daily sales snapshot
 
 on:
-  schedule:
-    - cron: "15 18 * * *"
   workflow_dispatch:
 
 jobs:
