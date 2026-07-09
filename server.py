@@ -1190,8 +1190,8 @@ def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[s
         rows = supabase_select_all(
             "performance_snapshots"
             f"?tracked_event_id=eq.{tracked[0]['id']}"
-            "&select=show_datetime,description,total_seats"
-            "&order=show_datetime.asc"
+            "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats"
+            "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
         )
     except StorageError:
         return {}, 0
@@ -1522,8 +1522,9 @@ def final_snapshot_schedule_ids(
     rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
-        "&select=schedule_id,show_datetime,event_snapshots!inner(source,captured_at)"
+        "&select=event_snapshot_id,schedule_id,show_datetime,event_snapshots!inner(source,captured_at)"
         "&event_snapshots.source=eq.final"
+        "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
     finalized: set[int] = set()
     for row in rows or []:
@@ -1630,10 +1631,10 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked[0]['id']}"
-        "&select=schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
+        "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
         "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,"
         "breakdown,event_snapshots!inner(source,captured_at)"
-        "&order=show_datetime.asc"
+        "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
     if not rows:
         return
@@ -1714,6 +1715,7 @@ def attach_daily_performance_deltas(data: dict[str, Any]) -> None:
         "performance_snapshots"
         f"?event_snapshot_id=eq.{baseline['id']}"
         "&select=schedule_id,actual_sold,effective_sold"
+        "&order=schedule_id.asc"
     )
     baseline_by_schedule = {int(item["schedule_id"]): int(item["actual_sold"] or 0) for item in performances}
     total_delta = 0
@@ -1890,7 +1892,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         f"?tracked_event_id=eq.{tracked_event['id']}"
         "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
         "unavailable,available,effective_sold_percent,event_snapshots(id,source,captured_at)"
-        "&order=show_datetime.asc"
+        "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
     daily_snapshots = corrected_daily_snapshot_series(snapshots, performances)
     return {
