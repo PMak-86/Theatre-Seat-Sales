@@ -286,13 +286,20 @@ def parse_performance_wall_datetime(value: str | None) -> datetime | None:
 
 
 def ticketsearch_schedule_datetime(value: str | None) -> datetime | None:
-    """Interpret TicketSearch's UTC-labelled schedule clock as Sydney venue time."""
+    """Normalize TicketSearch schedules, which inconsistently use local and UTC clocks."""
     if not value:
         return None
     try:
-        wall_time = datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    if parsed.tzinfo is not None and parsed.utcoffset() not in {timedelta(0), None}:
+        return parsed.astimezone(timezone.utc)
+    wall_time = parsed.replace(tzinfo=None)
+    # Daytime/evening schedules are returned as Sydney clock values with a
+    # misleading +00 suffix; morning UTC values are already correctly offset.
+    if wall_time.hour < 10:
+        return parsed.replace(tzinfo=timezone.utc).astimezone(timezone.utc)
     offset = sydney_offset_hours(wall_time.replace(tzinfo=timezone.utc))
     return wall_time.replace(tzinfo=timezone(timedelta(hours=offset))).astimezone(timezone.utc)
 
@@ -1711,6 +1718,13 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
     for row in rows:
         show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         if show_time and show_time <= now_utc:
+            snapshot = row.get("event_snapshots") or {}
+            source = str(snapshot.get("source") or "")
+            captured_at = parse_event_datetime(snapshot.get("captured_at"))
+            if source not in {"final", "retired"} and (
+                not captured_at or captured_at > show_time
+            ):
+                continue
             session = performance_snapshot_to_session(row)
             schedule_id: Any = int(row["schedule_id"])
             if data.get("provider") == "trybooking":
