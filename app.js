@@ -27,15 +27,18 @@ const formatDate = new Intl.DateTimeFormat("en-AU", {
   day: "2-digit",
   month: "short",
   year: "numeric",
+  timeZone: "Australia/Sydney",
 });
 const formatTime = new Intl.DateTimeFormat("en-AU", {
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "Australia/Sydney",
 });
 const formatShortDate = new Intl.DateTimeFormat("en-AU", {
   day: "numeric",
   month: "short",
   year: "numeric",
+  timeZone: "Australia/Sydney",
 });
 const formatSnapshotDateTime = new Intl.DateTimeFormat("en-AU", {
   day: "2-digit",
@@ -43,6 +46,7 @@ const formatSnapshotDateTime = new Intl.DateTimeFormat("en-AU", {
   year: "numeric",
   hour: "numeric",
   minute: "2-digit",
+  timeZone: "Australia/Sydney",
 });
 
 function setStatus(message, isError = false) {

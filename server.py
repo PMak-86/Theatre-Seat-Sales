@@ -273,27 +273,24 @@ def parse_performance_wall_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     text = str(value).replace("Z", "+00:00")
-    if "+" in text:
-        text = text.rsplit("+", 1)[0]
-    elif len(text) > 19 and text[19] == "-":
-        text = text[:19]
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
         return parse_event_datetime(value)
+    if parsed.tzinfo is not None:
+        # Supabase normalizes timestamp-with-time-zone values to UTC. Preserve
+        # that instant rather than treating its UTC clock time as Sydney time.
+        return parsed.astimezone(timezone.utc)
     offset = sydney_offset_hours(parsed.replace(tzinfo=timezone.utc))
     return parsed.replace(tzinfo=timezone(timedelta(hours=offset))).astimezone(timezone.utc)
 
 
 def performance_wall_datetime_label(value: str | None) -> str | None:
-    if not value:
-        return None
-    text = str(value).replace("Z", "+00:00")
-    if "+" in text:
-        return text.rsplit("+", 1)[0]
-    if len(text) > 19 and text[19] == "-":
-        return text[:19]
-    return text
+    moment = parse_event_datetime(value)
+    if not moment:
+        return value
+    offset = timezone(timedelta(hours=sydney_offset_hours(moment)))
+    return moment.astimezone(offset).isoformat(timespec="seconds")
 
 
 def recompute_summary(data: dict[str, Any]) -> None:
