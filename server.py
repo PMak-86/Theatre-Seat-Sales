@@ -1171,9 +1171,11 @@ def trybooking_session_history_key(session: dict[str, str], timezone_offset: str
     return trybooking_history_key(date_time, session.get("time"))
 
 
-def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[str, str], int], int]:
+def trybooking_capacity_hints_from_history(
+    event_url: str,
+) -> tuple[dict[tuple[str, str], int], int, dict[tuple[str, str], int]]:
     if not storage_enabled():
-        return {}, 0
+        return {}, 0, {}
     try:
         tracked = supabase_request(
             "tracked_events"
@@ -1183,7 +1185,7 @@ def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[s
             "&limit=1"
         )
         if not tracked:
-            return {}, 0
+            return {}, 0, {}
         rows = supabase_select_all(
             "performance_snapshots"
             f"?tracked_event_id=eq.{tracked[0]['id']}"
@@ -1191,9 +1193,10 @@ def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[s
             "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
         )
     except StorageError:
-        return {}, 0
+        return {}, 0, {}
 
     hints: dict[tuple[str, str], int] = {}
+    schedule_ids: dict[tuple[str, str], int] = {}
     event_capacity = 0
     for row in rows or []:
         total = int(row.get("total_seats") or 0)
@@ -1203,7 +1206,11 @@ def trybooking_capacity_hints_from_history(event_url: str) -> tuple[dict[tuple[s
         key = trybooking_history_key(row.get("show_datetime"), row.get("description"))
         if key:
             hints[key] = max(hints.get(key, 0), total)
-    return hints, event_capacity
+            # TryBooking drops the session link when a performance is closed.
+            # Keep the first observed real session ID so the closed row still
+            # replaces its existing performance instead of creating a duplicate.
+            schedule_ids.setdefault(key, int(row["schedule_id"]))
+    return hints, event_capacity, schedule_ids
 
 
 def analyse_trybooking_session(
@@ -1327,7 +1334,15 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
     timezone_offset = trybooking_timezone_offset(landing_html)
     raw_sessions = trybooking_sessions(event_id, landing_url)
     linked_sessions: dict[int, dict[str, Any]] = {}
-    history_capacity_hints, capacity_hint = trybooking_capacity_hints_from_history(landing_url)
+    history_capacity_hints, capacity_hint, history_schedule_ids = trybooking_capacity_hints_from_history(landing_url)
+    for session in raw_sessions:
+        if session.get("href"):
+            continue
+        session_key = trybooking_session_history_key(session, timezone_offset)
+        historic_schedule_id = history_schedule_ids.get(session_key) if session_key else None
+        if historic_schedule_id:
+            session["sessionId"] = str(historic_schedule_id)
+
     for session in raw_sessions:
         if not session.get("href"):
             continue
