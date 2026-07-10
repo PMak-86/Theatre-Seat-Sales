@@ -1575,7 +1575,6 @@ def final_snapshot_schedule_ids(
     tracked_event_id: str,
     window_minutes: int = 15,
     late_grace_minutes: int = 30,
-    ticketsearch_wall_time: bool = False,
 ) -> set[int]:
     rows = supabase_select_all(
         "performance_snapshots"
@@ -1586,11 +1585,7 @@ def final_snapshot_schedule_ids(
     )
     finalized: set[int] = set()
     for row in rows or []:
-        show_time = (
-            ticketsearch_schedule_datetime(row.get("show_datetime"))
-            if ticketsearch_wall_time
-            else parse_performance_wall_datetime(row.get("show_datetime"))
-        )
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         snapshot = row.get("event_snapshots") or {}
         captured_at = parse_event_datetime(snapshot.get("captured_at"))
         if not show_time or not captured_at:
@@ -1601,20 +1596,13 @@ def final_snapshot_schedule_ids(
     return finalized
 
 
-def performance_snapshot_to_session(
-    row: dict[str, Any],
-    ticketsearch_wall_time: bool = False,
-) -> dict[str, Any]:
+def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = row.get("event_snapshots") or {}
     source = str(snapshot.get("source") or "")
     breakdown, seat_map, revenue = parse_performance_snapshot_details(row.get("breakdown"))
     session = {
         "scheduleId": int(row["schedule_id"]),
-        "dateTime": (
-            ticketsearch_schedule_label(row.get("show_datetime"))
-            if ticketsearch_wall_time
-            else performance_wall_datetime_label(row.get("show_datetime"))
-        ),
+        "dateTime": performance_wall_datetime_label(row.get("show_datetime")),
         "description": row.get("description"),
         "totalSeats": int(row.get("total_seats") or 0),
         "availableSeats": int(row.get("available") or 0),
@@ -1721,14 +1709,9 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
                 live_trybooking_schedule_ids[key] = int(session["scheduleId"])
 
     for row in rows:
-        ticketsearch_wall_time = data.get("provider") == "ticketsearch"
-        show_time = (
-            ticketsearch_schedule_datetime(row.get("show_datetime"))
-            if ticketsearch_wall_time
-            else parse_performance_wall_datetime(row.get("show_datetime"))
-        )
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         if show_time and show_time <= now_utc:
-            session = performance_snapshot_to_session(row, ticketsearch_wall_time)
+            session = performance_snapshot_to_session(row)
             schedule_id: Any = int(row["schedule_id"])
             if data.get("provider") == "trybooking":
                 key = trybooking_history_key(row.get("show_datetime"), row.get("description"))
@@ -1914,7 +1897,7 @@ def retired_snapshot_candidates(
     candidates = []
     for row in latest_rows:
         schedule_id = int(row["schedule_id"])
-        show_time = ticketsearch_schedule_datetime(row.get("show_datetime"))
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         if not show_time or show_time > now_utc or schedule_id in live_schedule_ids:
             continue
 
@@ -2006,7 +1989,6 @@ def run_final_snapshots(
                 event["id"],
                 window_minutes,
                 late_grace_minutes,
-                data.get("provider") == "ticketsearch",
             )
             due_sessions = []
             for session in data.get("sessions", []):
@@ -2103,11 +2085,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         "unavailable,available,effective_sold_percent,event_snapshots(id,source,captured_at)"
         "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
-    daily_snapshots = corrected_daily_snapshot_series(
-        snapshots,
-        performances,
-        parse_trybooking_input(tracked_event["event_url"]) is None,
-    )
+    daily_snapshots = corrected_daily_snapshot_series(snapshots, performances)
     return {
         "event": tracked_event,
         "snapshots": daily_snapshots,
@@ -2176,19 +2154,12 @@ def snapshot_captured_at(row: dict[str, Any]) -> datetime | None:
     return parse_event_datetime(snapshot.get("captured_at"))
 
 
-def best_finalized_performance_rows(
-    performances: list[dict[str, Any]],
-    ticketsearch_wall_time: bool = False,
-) -> dict[int, dict[str, Any]]:
+def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[int, dict[str, Any]]:
     best: dict[int, dict[str, Any]] = {}
     ranks: dict[int, tuple[int, float]] = {}
     for row in performances or []:
         schedule_id = int(row.get("schedule_id") or 0)
-        show_time = (
-            ticketsearch_schedule_datetime(row.get("show_datetime"))
-            if ticketsearch_wall_time
-            else parse_performance_wall_datetime(row.get("show_datetime"))
-        )
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         captured_at = snapshot_captured_at(row)
         if not schedule_id or not show_time or not captured_at:
             continue
@@ -2249,9 +2220,8 @@ def recompute_snapshot_percentages(snapshot: dict[str, Any]) -> None:
 def corrected_daily_snapshot_series(
     snapshots: list[dict[str, Any]],
     performances: list[dict[str, Any]],
-    ticketsearch_wall_time: bool = False,
 ) -> list[dict[str, Any]]:
-    finalized = best_finalized_performance_rows(performances, ticketsearch_wall_time)
+    finalized = best_finalized_performance_rows(performances)
     daily_performances: dict[str, dict[int, dict[str, Any]]] = {}
     for row in performances or []:
         snapshot_id = str(row.get("event_snapshot_id") or "")
@@ -2268,11 +2238,7 @@ def corrected_daily_snapshot_series(
         included = daily_performances.get(snapshot_id, {})
         if captured_at:
             for schedule_id, row in finalized.items():
-                show_time = (
-                    ticketsearch_schedule_datetime(row.get("show_datetime"))
-                    if ticketsearch_wall_time
-                    else parse_performance_wall_datetime(row.get("show_datetime"))
-                )
+                show_time = parse_performance_wall_datetime(row.get("show_datetime"))
                 if not show_time or show_time > captured_at:
                     continue
                 current_row = included.get(schedule_id)
