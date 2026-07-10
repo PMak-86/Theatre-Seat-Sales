@@ -1173,7 +1173,7 @@ def trybooking_session_history_key(session: dict[str, str], timezone_offset: str
 
 def trybooking_capacity_hints_from_history(
     event_url: str,
-) -> tuple[dict[tuple[str, str], int], int, dict[tuple[str, str], int]]:
+) -> tuple[dict[tuple[str, str], int], int, dict[tuple[str, str], set[int]]]:
     if not storage_enabled():
         return {}, 0, {}
     try:
@@ -1196,7 +1196,7 @@ def trybooking_capacity_hints_from_history(
         return {}, 0, {}
 
     hints: dict[tuple[str, str], int] = {}
-    schedule_ids: dict[tuple[str, str], int] = {}
+    schedule_ids: dict[tuple[str, str], set[int]] = {}
     event_capacity = 0
     for row in rows or []:
         total = int(row.get("total_seats") or 0)
@@ -1206,10 +1206,7 @@ def trybooking_capacity_hints_from_history(
         key = trybooking_history_key(row.get("show_datetime"), row.get("description"))
         if key:
             hints[key] = max(hints.get(key, 0), total)
-            # TryBooking drops the session link when a performance is closed.
-            # Keep the first observed real session ID so the closed row still
-            # replaces its existing performance instead of creating a duplicate.
-            schedule_ids.setdefault(key, int(row["schedule_id"]))
+            schedule_ids.setdefault(key, set()).add(int(row["schedule_id"]))
     return hints, event_capacity, schedule_ids
 
 
@@ -1339,7 +1336,12 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
         if session.get("href"):
             continue
         session_key = trybooking_session_history_key(session, timezone_offset)
-        historic_schedule_id = history_schedule_ids.get(session_key) if session_key else None
+        historic_schedule_ids = history_schedule_ids.get(session_key, set()) if session_key else set()
+        synthetic_schedule_id = synthetic_trybooking_schedule_id(event_id, session["date"], session.get("time", ""))
+        historic_schedule_id = next(
+            (schedule_id for schedule_id in historic_schedule_ids if schedule_id != synthetic_schedule_id),
+            None,
+        )
         if historic_schedule_id:
             session["sessionId"] = str(historic_schedule_id)
 
@@ -1677,13 +1679,25 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
         return
 
     now_utc = datetime.now(timezone.utc)
-    final_by_schedule: dict[int, dict[str, Any]] = {}
-    final_rank_by_schedule: dict[int, tuple[int, float]] = {}
+    final_by_schedule: dict[Any, dict[str, Any]] = {}
+    final_rank_by_schedule: dict[Any, tuple[int, float]] = {}
+    live_trybooking_schedule_ids: dict[tuple[str, str], int] = {}
+    if data.get("provider") == "trybooking":
+        for session in data.get("sessions", []):
+            key = trybooking_history_key(session.get("dateTime"), session.get("description"))
+            if key and session.get("scheduleId") is not None:
+                live_trybooking_schedule_ids[key] = int(session["scheduleId"])
+
     for row in rows:
         show_time = parse_performance_wall_datetime(row.get("show_datetime"))
         if show_time and show_time <= now_utc:
-            schedule_id = int(row["schedule_id"])
             session = performance_snapshot_to_session(row)
+            schedule_id: Any = int(row["schedule_id"])
+            if data.get("provider") == "trybooking":
+                key = trybooking_history_key(row.get("show_datetime"), row.get("description"))
+                if key:
+                    schedule_id = key
+                    session["scheduleId"] = live_trybooking_schedule_ids.get(key, int(row["schedule_id"]))
             rank = finalized_snapshot_rank(row, show_time)
             existing_rank = final_rank_by_schedule.get(schedule_id)
             if existing_rank is None or rank > existing_rank:
@@ -1700,7 +1714,8 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
         for session in live_sessions
         if session.get("scheduleId") is not None
     }
-    live_by_schedule.update(final_by_schedule)
+    for session in final_by_schedule.values():
+        live_by_schedule[int(session["scheduleId"])] = session
     data["sessions"] = sorted(live_by_schedule.values(), key=lambda item: item.get("dateTime") or "")
     recompute_summary(data)
 
