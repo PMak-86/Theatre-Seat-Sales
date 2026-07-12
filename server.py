@@ -2162,7 +2162,73 @@ def post_show_report(event_url: str) -> dict[str, Any]:
         "uplift": history["uplift"],
         "performances": final_sessions,
         "performanceHistory": history_by_schedule,
+        "campaignAnalysis": finding_nemo_campaign_analysis(event_url, history["snapshots"]),
         "complete": bool(final_sessions) and len(final_sessions) == len(final_rows),
+    }
+
+
+FINDING_NEMO_FACEBOOK_POSTS = [
+    ("2026-06-16", "post", "1C2YS9o5qH", None, None, None),
+    ("2026-06-20", "post", "1Dv3UKRZGV", 35, 0, 15),
+    ("2026-06-26", "post", "1DFreE55U5", None, None, None),
+    ("2026-06-28", "post", "19LPJ3PCb6", None, None, None),
+    ("2026-06-29", "post", "1BWJuBfwNh", None, None, None),
+    ("2026-06-30", "post", "18oNp9Msbz", None, None, None),
+    ("2026-07-01", "post", "1Lp6HDdyo9", None, None, None),
+    ("2026-07-02", "post", "18r5JftCwz", 28, 0, 5),
+    ("2026-07-03", "post", "1c8Kvw15iD", 12, 0, 12),
+    ("2026-07-05", "post", "1DRYX472s4", 116, 18, 34),
+    ("2026-07-06", "video", "1EX1NaupPX", None, None, None),
+    ("2026-07-07", "post", "18qsrpo12r", 30, 0, 3),
+    ("2026-07-08", "post", "17uq73ojX8", None, None, None),
+    ("2026-07-09", "post", "18Wtbi3kTe", None, None, None),
+    ("2026-07-10", "post", "1HCVNTmmBn", None, None, None),
+    ("2026-07-11", "post", "1GDD1zN6s5", 65, 7, 8),
+]
+
+
+def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if "salesevent/162924" not in event_url:
+        return None
+
+    daily = {str(item.get("local_date")): int(item.get("effective_sold") or 0) for item in snapshots}
+    posts = []
+    post_changes = []
+    for post_date, post_type, share_id, reactions, comments, shares in FINDING_NEMO_FACEBOOK_POSTS:
+        next_date = (date.fromisoformat(post_date) + timedelta(days=1)).isoformat()
+        change = None
+        if post_date in daily and next_date in daily:
+            change = daily[next_date] - daily[post_date]
+            post_changes.append(change)
+        posts.append({
+            "date": post_date,
+            "type": post_type,
+            "url": f"https://www.facebook.com/share/{'v' if post_type == 'video' else 'p'}/{share_id}/",
+            "screenshot": f"/assets/facebook-finding-nemo/{post_date}.png",
+            "reactions": reactions,
+            "comments": comments,
+            "shares": shares,
+            "nextSnapshotDate": next_date,
+            "nextDayTicketChange": change,
+        })
+
+    post_dates = {post["date"] for post in posts}
+    non_post_changes = []
+    for snapshot in snapshots:
+        current_date = str(snapshot.get("local_date"))
+        previous_date = (date.fromisoformat(current_date) - timedelta(days=1)).isoformat()
+        if current_date in daily and previous_date in daily and previous_date not in post_dates:
+            non_post_changes.append(daily[current_date] - daily[previous_date])
+
+    def average(values: list[int]) -> float | None:
+        return round(sum(values) / len(values), 1) if values else None
+
+    return {
+        "title": "Finding Nemo Jr Facebook activity",
+        "posts": posts,
+        "postNextDayAverage": average(post_changes),
+        "nonPostNextDayAverage": average(non_post_changes),
+        "engagementCapturedAt": "2026-07-13",
     }
 
 
@@ -2493,6 +2559,12 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "text/css; charset=utf-8"
         elif file_path.suffix == ".js":
             content_type = "application/javascript; charset=utf-8"
+        elif file_path.suffix == ".png":
+            # Browser screenshots are JPEG-encoded even though the capture
+            # API gives them a PNG filename.
+            content_type = "image/jpeg" if "facebook-finding-nemo" in file_path.parts else "image/png"
+        elif file_path.suffix in {".jpg", ".jpeg"}:
+            content_type = "image/jpeg"
 
         body = file_path.read_bytes()
         self.send_response(200)

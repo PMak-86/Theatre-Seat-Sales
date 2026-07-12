@@ -48,6 +48,20 @@ function sessionCard(session, histories) {
   </article>`;
 }
 
+function engagementValue(value) { return value == null ? "-" : number.format(value); }
+
+function campaignSection(analysis) {
+  if (!analysis?.posts?.length) return "";
+  const postAverage = analysis.postNextDayAverage == null ? "-" : `+${number.format(analysis.postNextDayAverage)}`;
+  const nonPostAverage = analysis.nonPostNextDayAverage == null ? "-" : `+${number.format(analysis.nonPostNextDayAverage)}`;
+  const cards = analysis.posts.map((post) => {
+    const postDate = new Date(`${post.date}T12:00:00+10:00`);
+    const change = post.nextDayTicketChange == null ? "-" : `${post.nextDayTicketChange >= 0 ? "+" : ""}${number.format(post.nextDayTicketChange)}`;
+    return `<article class="campaign-card"><img src="${escapeHtml(post.screenshot)}" alt="Facebook post from ${escapeHtml(post.date)}"><div><h3>${dateFormat.format(postDate)}</h3><p>${escapeHtml(post.type === "video" ? "Facebook video" : "Facebook post")}</p><dl><div><dt>Reactions</dt><dd>${engagementValue(post.reactions)}</dd></div><div><dt>Comments</dt><dd>${engagementValue(post.comments)}</dd></div><div><dt>Shares</dt><dd>${engagementValue(post.shares)}</dd></div><div><dt>Next-day sales</dt><dd>${change}</dd></div></dl><a href="${escapeHtml(post.url)}" target="_blank" rel="noreferrer">View post</a></div></article>`;
+  }).join("");
+  return `<section class="report-section campaign"><h2>${escapeHtml(analysis.title)}</h2><p class="subtle">Facebook activity supplied by the company. Ticket response is the change between the scheduled snapshots on the post date and the following day. This shows association, not proof that a post caused sales.</p><div class="campaign-summary"><span><b>${number.format(analysis.posts.length)}</b> posts</span><span><b>${postAverage}</b> average next-day sales after a post</span><span><b>${nonPostAverage}</b> average on non-post days</span></div><p class="subtle">Engagement figures were captured from publicly visible Facebook cards on ${escapeHtml(analysis.engagementCapturedAt || "")}. A dash means Facebook did not expose a reliable count in the captured card.</p><div class="campaign-grid">${cards}</div></section>`;
+}
+
 function render(data) {
   const event = data.event || {};
   const summary = data.summary || {};
@@ -57,6 +71,7 @@ function render(data) {
     <section class="cover">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU")}</p></div></section>
     <section class="overview"><div class="ring"><b>${percentage(summary.effectiveSoldPercent)}</b><span>sold</span></div><div class="overview-copy"><h2>Run summary</h2><div class="summary-grid"><span><b>${number.format(summary.performances)}</b> Performances</span><span><b>${number.format(summary.totalSeats)}</b> Saleable seats</span><span><b>${number.format(summary.ticketsSold)}</b> Tickets sold</span><span><b>${money.format(summary.revenueEstimate?.amount || 0)}</b> Est. revenue</span></div></div></section>
     <section class="report-section"><h2>Sales across the run</h2><p class="subtle">Effective sold seats at each daily scheduled snapshot. Completed performances remain included in the run total.</p>${chart(data.dailySnapshots || [])}</section>
+    ${campaignSection(data.campaignAnalysis)}
     <section class="report-section"><h2>Performance final results</h2><div class="final-table"><div class="table-head"><span>Date</span><span>Time</span><span>Sold</span><span>Capacity</span><span>Sold %</span><span>Revenue</span></div>${(data.performances || []).map((session) => { const when = new Date(session.dateTime); return `<div class="table-row"><span>${dateFormat.format(when)}</span><span>${timeFormat.format(when)}</span><span>${number.format(session.ticketsSold)}</span><span>${number.format(session.totalSeats)}</span><span>${percentage(session.effectiveSoldPercent)}</span><span>${session.revenueEstimate?.amount == null ? "-" : money.format(session.revenueEstimate.amount)}</span></div>`; }).join("")}</div></section>
     <section class="report-section performances"><h2>Performance detail</h2>${(data.performances || []).map((session) => sessionCard(session, data.performanceHistory || {})).join("")}</section>
     <footer>Final figures are taken from the stored final pre-show snapshot or retired TicketSearch schedule snapshot. Revenue is an estimate from public ticket price levels and excludes holds.</footer>`;
