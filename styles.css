@@ -51,7 +51,7 @@ h1 {
 
 .search {
   display: grid;
-  grid-template-columns: 1fr auto 44px;
+  grid-template-columns: 1fr auto 44px auto;
   gap: 10px;
 }
 
@@ -113,6 +113,11 @@ button:disabled {
 .bookmark-save-button.is-saved {
   background: var(--navy);
   color: #fff;
+}
+
+.report-button {
+  background: var(--navy);
+  white-space: nowrap;
 }
 
 .bookmark-list {
