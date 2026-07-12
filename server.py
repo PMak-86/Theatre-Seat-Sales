@@ -1639,7 +1639,7 @@ def finalized_snapshot_rank(row: dict[str, Any], show_time: datetime) -> tuple[i
     captured_at = parse_event_datetime(snapshot.get("captured_at"))
     if not captured_at:
         return (0, 0.0)
-    if source == "retired":
+    if source == "retired" and int(row.get("total_seats") or 0) > 0:
         priority = 4
     elif source == "final":
         priority = 3
@@ -1721,6 +1721,10 @@ def attach_finalized_sessions(data: dict[str, Any]) -> None:
             snapshot = row.get("event_snapshots") or {}
             source = str(snapshot.get("source") or "")
             captured_at = parse_event_datetime(snapshot.get("captured_at"))
+            # TicketSearch can return a retired schedule shell after the event has
+            # closed. It has no capacity or seat data and must not replace a final.
+            if source == "retired" and int(row.get("total_seats") or 0) <= 0:
+                continue
             if source not in {"final", "retired"} and (
                 not captured_at or captured_at > show_time
             ):
@@ -1960,8 +1964,7 @@ def analyse_retired_ticketsearch_sessions(
 
     recovered = []
     for candidate in candidates:
-        recovered.append(
-            analyse_session(
+        session = analyse_session(
                 token,
                 event_id,
                 event,
@@ -1972,7 +1975,8 @@ def analyse_retired_ticketsearch_sessions(
                 },
                 mask_url,
             )
-        )
+        if int(session.get("totalSeats") or 0) > 0:
+            recovered.append(session)
     return recovered
 
 
@@ -2065,7 +2069,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         tracked = supabase_request(
             "tracked_events"
             f"?event_url=eq.{quote(event_url, safe='')}"
-            "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
+            "&select=id,event_id,event_url,event_name,venue,location,image_url,date_start,date_end"
             "&order=last_seen_at.desc"
             "&limit=1"
         )
@@ -2073,7 +2077,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         tracked = supabase_request(
             "tracked_events"
             f"?event_id=eq.{event_id}"
-            "&select=id,event_id,event_url,event_name,venue,location,date_start,date_end"
+            "&select=id,event_id,event_url,event_name,venue,location,image_url,date_start,date_end"
             "&order=last_seen_at.desc"
             "&limit=1"
         )
@@ -2096,7 +2100,8 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event['id']}"
         "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
-        "unavailable,available,effective_sold_percent,event_snapshots(id,source,captured_at)"
+        "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,breakdown,"
+        "event_snapshots(id,source,captured_at)"
         "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
     daily_snapshots = corrected_daily_snapshot_series(snapshots, performances)
@@ -2105,6 +2110,53 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         "snapshots": daily_snapshots,
         "performances": performances,
         "uplift": uplift_metrics(daily_snapshots),
+    }
+
+
+def post_show_report(event_url: str) -> dict[str, Any]:
+    history = event_history(event_url=event_url)
+    event = history["event"]
+    performances = history["performances"]
+    final_rows = best_finalized_performance_rows(performances)
+    final_sessions = [
+        performance_snapshot_to_session(row)
+        for _, row in sorted(final_rows.items(), key=lambda item: item[1].get("show_datetime") or "")
+    ]
+    report_data = {"sessions": final_sessions, "summary": {}}
+    recompute_summary(report_data)
+
+    history_by_schedule: dict[int, list[dict[str, Any]]] = {}
+    for row in performances:
+        schedule_id = int(row.get("schedule_id") or 0)
+        captured_at = snapshot_captured_at(row)
+        if not schedule_id or not captured_at:
+            continue
+        source = snapshot_source(row)
+        if source not in {"search", "daily", "final", "retired"}:
+            continue
+        if source == "retired" and int(row.get("total_seats") or 0) <= 0:
+            continue
+        history_by_schedule.setdefault(schedule_id, []).append({
+            "capturedAt": captured_at.isoformat(),
+            "effectiveSold": int(row.get("effective_sold") or 0),
+            "source": source,
+        })
+    for schedule_id, points in history_by_schedule.items():
+        points.sort(key=lambda item: item["capturedAt"])
+        deduped: list[dict[str, Any]] = []
+        for point in points:
+            if not deduped or point["capturedAt"] != deduped[-1]["capturedAt"]:
+                deduped.append(point)
+        history_by_schedule[schedule_id] = deduped
+
+    return {
+        "event": event,
+        "summary": report_data["summary"],
+        "dailySnapshots": history["snapshots"],
+        "uplift": history["uplift"],
+        "performances": final_sessions,
+        "performanceHistory": history_by_schedule,
+        "complete": bool(final_sessions) and len(final_sessions) == len(final_rows),
     }
 
 
@@ -2178,7 +2230,7 @@ def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[
         if not schedule_id or not show_time or not captured_at:
             continue
         source = snapshot_source(row)
-        if source == "retired":
+        if source == "retired" and int(row.get("total_seats") or 0) > 0:
             priority = 4
         elif source == "final":
             priority = 3
@@ -2325,6 +2377,9 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/api/history":
             self.handle_history(parsed)
             return
+        if parsed.path == "/api/report":
+            self.handle_report(parsed)
+            return
         if parsed.path == "/api/tracked-events":
             self.handle_tracked_events()
             return
@@ -2392,6 +2447,18 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             self.send_json(200, event_history(int(event_id_raw) if event_id_raw.isdigit() else None, event_url or None))
+        except StorageError as exc:
+            self.send_json(404, {"error": str(exc)})
+        except Exception as exc:
+            self.send_json(500, {"error": f"Unexpected error: {exc}"})
+
+    def handle_report(self, parsed: Any) -> None:
+        event_url = unquote(parse_qs(parsed.query).get("eventUrl", [""])[0])
+        if not event_url:
+            self.send_json(400, {"error": "Provide an eventUrl query parameter."})
+            return
+        try:
+            self.send_json(200, post_show_report(event_url))
         except StorageError as exc:
             self.send_json(404, {"error": str(exc)})
         except Exception as exc:
