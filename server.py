@@ -2134,7 +2134,13 @@ def post_show_report(event_url: str) -> dict[str, Any]:
         source = snapshot_source(row)
         if source not in {"search", "daily", "final", "retired"}:
             continue
-        if source == "retired" and int(row.get("total_seats") or 0) <= 0:
+        # Closed TicketSearch schedules can appear in later searches and daily
+        # snapshots as an empty shell. They are not sales observations.
+        if (
+            int(row.get("total_seats") or 0) <= 0
+            and int(row.get("effective_sold") or 0) <= 0
+            and int(row.get("available") or 0) <= 0
+        ):
             continue
         history_by_schedule.setdefault(schedule_id, []).append({
             "capturedAt": captured_at.isoformat(),
