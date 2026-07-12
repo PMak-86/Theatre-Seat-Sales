@@ -2223,11 +2223,37 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
     def average(values: list[int]) -> float | None:
         return round(sum(values) / len(values), 1) if values else None
 
+    def correlation(field: str) -> float | None:
+        pairs = [
+            (float(post[field]), float(post["nextDayTicketChange"]))
+            for post in posts
+            if post.get(field) is not None and post.get("nextDayTicketChange") is not None
+        ]
+        if len(pairs) < 3:
+            return None
+        xs, ys = zip(*pairs)
+        x_mean = sum(xs) / len(xs)
+        y_mean = sum(ys) / len(ys)
+        numerator = sum((x - x_mean) * (y - y_mean) for x, y in pairs)
+        x_variance = sum((x - x_mean) ** 2 for x in xs)
+        y_variance = sum((y - y_mean) ** 2 for y in ys)
+        if not x_variance or not y_variance:
+            return None
+        return round(numerator / (x_variance * y_variance) ** 0.5, 2)
+
+    engagement_posts = [post for post in posts if any(post.get(field) is not None for field in ("reactions", "comments", "shares"))]
+
     return {
         "title": "Finding Nemo Jr Facebook activity",
         "posts": posts,
         "postNextDayAverage": average(post_changes),
         "nonPostNextDayAverage": average(non_post_changes),
+        "engagementSampleSize": len(engagement_posts),
+        "engagementCorrelations": {
+            "reactions": correlation("reactions"),
+            "comments": correlation("comments"),
+            "shares": correlation("shares"),
+        },
         "engagementCapturedAt": "2026-07-13",
     }
 

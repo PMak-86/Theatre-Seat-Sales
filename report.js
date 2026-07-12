@@ -32,8 +32,24 @@ function chart(points, className = "sales-chart") {
 
 function seatMap(map) {
   if (!map?.seats?.length) return "";
+  if (map.type === "laycock-main") return laycockSeatMap(map);
   const seats = map.seats.map((seat) => `<span class="seat ${escapeHtml(seat.status || "available")}" title="${escapeHtml(`${seat.row || ""} ${seat.seatNumber || ""}`)}"></span>`).join("");
   return `<div class="seat-map"><strong>Final seat map</strong><div class="seat-grid" style="--columns:${Math.max(16, Math.min(32, map.columns || 24))}">${seats}</div><div class="legend"><span><i class="available"></i> Available</span><span><i class="sold"></i> Sold</span><span><i class="hold"></i> Unavailable</span><span><i class="excluded"></i> Hidden/kill</span></div></div>`;
+}
+
+function mapLegend(map) {
+  return (map.legend || []).map((item) => `<span><i class="${escapeHtml(item.status)}"></i>${escapeHtml(item.label)}</span>`).join("");
+}
+
+function laycockSeatMap(map) {
+  const byPosition = new Map(map.seats.filter((seat) => seat.row && seat.seatNumber).map((seat) => [`${seat.row}-${seat.seatNumber}`, seat]));
+  const dot = (seat) => seat ? `<span class="seat ${escapeHtml(seat.status || "available")}" title="${escapeHtml(`Row ${seat.row} Seat ${seat.seatNumber}`)}"></span>` : '<span class="seat-empty"></span>';
+  const rows = ["N", "M", "L", "K", "J", "H", "G", "F", "E", "D", "C", "B", "A"].map((row) => {
+    const left = Array.from({ length: 16 }, (_, index) => dot(byPosition.get(`${row}-${index + 1}`))).join("");
+    const right = Array.from({ length: 16 }, (_, index) => dot(byPosition.get(`${row}-${index + 17}`))).join("");
+    return `<div class="laycock-row"><span>${row}</span><div>${left}</div><b></b><div>${right}</div><span>${row}</span></div>`;
+  }).join("");
+  return `<div class="seat-map laycock-report-map"><strong>Laycock Street final seat map</strong><div class="laycock-back">Back row</div><div class="laycock-layout">${rows}<div class="laycock-stage">Stage</div></div><div class="legend">${mapLegend(map)}</div></div>`;
 }
 
 function sessionCard(session, histories) {
@@ -54,12 +70,15 @@ function campaignSection(analysis) {
   if (!analysis?.posts?.length) return "";
   const postAverage = analysis.postNextDayAverage == null ? "-" : `+${number.format(analysis.postNextDayAverage)}`;
   const nonPostAverage = analysis.nonPostNextDayAverage == null ? "-" : `+${number.format(analysis.nonPostNextDayAverage)}`;
+  const correlations = analysis.engagementCorrelations || {};
+  const correlationLabel = (value) => value == null ? "insufficient data" : `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+  const writtenAnalysis = `Posts were followed by an average ${postAverage} tickets by the next scheduled snapshot, compared with ${nonPostAverage} on days without a post. For the ${number.format(analysis.engagementSampleSize || 0)} posts with captured engagement, reactions (${correlationLabel(correlations.reactions)}), comments (${correlationLabel(correlations.comments)}), and shares (${correlationLabel(correlations.shares)}) are compared with next-day ticket uplift. These are directional signals only: the sample is small and the campaign became more frequent close to opening, when demand naturally increased.`;
   const cards = analysis.posts.map((post) => {
     const postDate = new Date(`${post.date}T12:00:00+10:00`);
     const change = post.nextDayTicketChange == null ? "-" : `${post.nextDayTicketChange >= 0 ? "+" : ""}${number.format(post.nextDayTicketChange)}`;
     return `<article class="campaign-card"><img src="${escapeHtml(post.screenshot)}" alt="Facebook post from ${escapeHtml(post.date)}"><div><h3>${dateFormat.format(postDate)}</h3><p>${escapeHtml(post.type === "video" ? "Facebook video" : "Facebook post")}</p><dl><div><dt>Reactions</dt><dd>${engagementValue(post.reactions)}</dd></div><div><dt>Comments</dt><dd>${engagementValue(post.comments)}</dd></div><div><dt>Shares</dt><dd>${engagementValue(post.shares)}</dd></div><div><dt>Next-day sales</dt><dd>${change}</dd></div></dl><a href="${escapeHtml(post.url)}" target="_blank" rel="noreferrer">View post</a></div></article>`;
   }).join("");
-  return `<section class="report-section campaign"><h2>${escapeHtml(analysis.title)}</h2><p class="subtle">Facebook activity supplied by the company. Ticket response is the change between the scheduled snapshots on the post date and the following day. This shows association, not proof that a post caused sales.</p><div class="campaign-summary"><span><b>${number.format(analysis.posts.length)}</b> posts</span><span><b>${postAverage}</b> average next-day sales after a post</span><span><b>${nonPostAverage}</b> average on non-post days</span></div><p class="subtle">Engagement figures were captured from publicly visible Facebook cards on ${escapeHtml(analysis.engagementCapturedAt || "")}. A dash means Facebook did not expose a reliable count in the captured card.</p><div class="campaign-grid">${cards}</div></section>`;
+  return `<section class="report-section campaign"><h2>${escapeHtml(analysis.title)}</h2><p class="subtle">Facebook activity supplied by the company. Ticket response is the change between the scheduled snapshots on the post date and the following day. This shows association, not proof that a post caused sales.</p><div class="campaign-summary"><span><b>${number.format(analysis.posts.length)}</b> posts</span><span><b>${postAverage}</b> average next-day sales after a post</span><span><b>${nonPostAverage}</b> average on non-post days</span></div><div class="campaign-analysis"><h3>What the data suggests</h3><p>${escapeHtml(writtenAnalysis)}</p></div><p class="subtle">Engagement figures were captured from publicly visible Facebook cards on ${escapeHtml(analysis.engagementCapturedAt || "")}. A dash means Facebook did not expose a reliable count in the captured card.</p><div class="campaign-grid">${cards}</div></section>`;
 }
 
 function render(data) {
