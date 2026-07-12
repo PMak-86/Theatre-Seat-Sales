@@ -10,6 +10,7 @@ const submitButton = form.querySelector("button");
 const bookmarksEl = document.querySelector("#bookmarks");
 const bookmarkListEl = document.querySelector("#bookmark-list");
 const saveBookmarkButton = document.querySelector("#save-bookmark");
+const postShowReportButton = document.querySelector("#post-show-report");
 const historyTooltipEl = document.querySelector("#history-tooltip");
 const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
 const MAX_BOOKMARKS = 8;
@@ -551,6 +552,8 @@ function render(data) {
     url: data.eventUrl || input.value.trim(),
   };
   saveBookmarkButton.disabled = !currentEvent.url;
+  const allFinal = data.sessions.length > 0 && data.sessions.every((session) => session.isFinal);
+  postShowReportButton.hidden = !allFinal;
   updateBookmarkButton();
 
   setText("#event-name", data.eventName || `Event ${data.eventId}`);
@@ -922,6 +925,11 @@ bookmarkListEl.addEventListener("click", (event) => {
 });
 
 saveBookmarkButton.addEventListener("click", saveCurrentBookmark);
+
+postShowReportButton.addEventListener("click", () => {
+  if (!currentEvent?.url) return;
+  window.open(`/report.html?eventUrl=${encodeURIComponent(currentEvent.url)}`, "_blank", "noopener");
+});
 const historyChart = document.querySelector("#history-chart");
 historyChart.addEventListener("pointermove", handleHistoryPointer);
 historyChart.addEventListener("pointerdown", handleHistoryPointer);
