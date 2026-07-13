@@ -2168,21 +2168,21 @@ def post_show_report(event_url: str) -> dict[str, Any]:
 
 
 FINDING_NEMO_FACEBOOK_POSTS = [
-    ("2026-06-16", "post", "1C2YS9o5qH", None, None, None),
+    ("2026-06-16", "post", "1C2YS9o5qH", 18, 0, 10),
     ("2026-06-20", "post", "1Dv3UKRZGV", 35, 0, 15),
-    ("2026-06-26", "post", "1DFreE55U5", None, None, None),
-    ("2026-06-28", "post", "19LPJ3PCb6", None, None, None),
-    ("2026-06-29", "post", "1BWJuBfwNh", None, None, None),
-    ("2026-06-30", "post", "18oNp9Msbz", None, None, None),
-    ("2026-07-01", "post", "1Lp6HDdyo9", None, None, None),
+    ("2026-06-26", "post", "1DFreE55U5", 56, 73, 19),
+    ("2026-06-28", "post", "19LPJ3PCb6", 19, 0, 20),
+    ("2026-06-29", "post", "1BWJuBfwNh", 21, 0, 13),
+    ("2026-06-30", "post", "18oNp9Msbz", 18, 0, 10),
+    ("2026-07-01", "post", "1Lp6HDdyo9", 12, 1, 2),
     ("2026-07-02", "post", "18r5JftCwz", 28, 0, 5),
     ("2026-07-03", "post", "1c8Kvw15iD", 12, 0, 12),
-    ("2026-07-05", "post", "1DRYX472s4", 116, 18, 34),
+    ("2026-07-05", "post", "1DRYX472s4", 115, 18, 34),
     ("2026-07-06", "video", "1EX1NaupPX", None, None, None),
     ("2026-07-07", "post", "18qsrpo12r", 30, 0, 3),
-    ("2026-07-08", "post", "17uq73ojX8", None, None, None),
-    ("2026-07-09", "post", "18Wtbi3kTe", None, None, None),
-    ("2026-07-10", "post", "1HCVNTmmBn", None, None, None),
+    ("2026-07-08", "post", "17uq73ojX8", 50, 3, 18),
+    ("2026-07-09", "post", "18Wtbi3kTe", 45, 2, 6),
+    ("2026-07-10", "post", "1HCVNTmmBn", 37, 3, 4),
     ("2026-07-11", "post", "1GDD1zN6s5", 65, 7, 8),
 ]
 
@@ -2200,6 +2200,7 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
         if post_date in daily and next_date in daily:
             change = daily[next_date] - daily[post_date]
             post_changes.append(change)
+        engagement_total = None if reactions is None else reactions + comments + shares
         posts.append({
             "date": post_date,
             "type": post_type,
@@ -2208,6 +2209,7 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
             "reactions": reactions,
             "comments": comments,
             "shares": shares,
+            "engagementTotal": engagement_total,
             "nextSnapshotDate": next_date,
             "nextDayTicketChange": change,
         })
@@ -2241,7 +2243,20 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
             return None
         return round(numerator / (x_variance * y_variance) ** 0.5, 2)
 
-    engagement_posts = [post for post in posts if any(post.get(field) is not None for field in ("reactions", "comments", "shares"))]
+    engagement_posts = [post for post in posts if post.get("engagementTotal") is not None]
+    engagement_changes = [int(post["nextDayTicketChange"]) for post in engagement_posts if post.get("nextDayTicketChange") is not None]
+    engagement_totals = sorted(int(post["engagementTotal"]) for post in engagement_posts)
+    median_engagement = engagement_totals[len(engagement_totals) // 2] if engagement_totals else None
+    high_engagement_changes = [
+        int(post["nextDayTicketChange"])
+        for post in engagement_posts
+        if median_engagement is not None and post.get("nextDayTicketChange") is not None and int(post["engagementTotal"]) > median_engagement
+    ]
+    low_engagement_changes = [
+        int(post["nextDayTicketChange"])
+        for post in engagement_posts
+        if median_engagement is not None and post.get("nextDayTicketChange") is not None and int(post["engagementTotal"]) <= median_engagement
+    ]
 
     return {
         "title": "Finding Nemo Jr Facebook activity",
@@ -2253,7 +2268,12 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
             "reactions": correlation("reactions"),
             "comments": correlation("comments"),
             "shares": correlation("shares"),
+            "total": correlation("engagementTotal"),
         },
+        "medianEngagement": median_engagement,
+        "highEngagementAverage": average(high_engagement_changes),
+        "lowEngagementAverage": average(low_engagement_changes),
+        "engagementPostAverage": average(engagement_changes),
         "engagementCapturedAt": "2026-07-13",
     }
 
