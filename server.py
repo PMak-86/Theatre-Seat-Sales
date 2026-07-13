@@ -2178,7 +2178,7 @@ FINDING_NEMO_FACEBOOK_POSTS = [
     ("2026-07-02", "post", "18r5JftCwz", 28, 0, 5),
     ("2026-07-03", "post", "1c8Kvw15iD", 12, 0, 12),
     ("2026-07-05", "post", "1DRYX472s4", 115, 18, 34),
-    ("2026-07-06", "video", "1EX1NaupPX", None, None, None),
+    ("2026-07-06", "video", "1EX1NaupPX", 52, 2, 0),
     ("2026-07-07", "post", "18qsrpo12r", 30, 0, 3),
     ("2026-07-08", "post", "17uq73ojX8", 50, 3, 18),
     ("2026-07-09", "post", "18Wtbi3kTe", 45, 2, 6),
@@ -2224,6 +2224,11 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
 
     def average(values: list[int]) -> float | None:
         return round(sum(values) / len(values), 1) if values else None
+
+    def percent_difference(value: float | None, comparison: float | None) -> float | None:
+        if value is None or comparison in {None, 0}:
+            return None
+        return round((value - comparison) / comparison * 100, 1)
 
     def correlation(field: str) -> float | None:
         pairs = [
@@ -2274,6 +2279,11 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
         "highEngagementAverage": average(high_engagement_changes),
         "lowEngagementAverage": average(low_engagement_changes),
         "engagementPostAverage": average(engagement_changes),
+        "postDayUpliftPercent": percent_difference(average(post_changes), average(non_post_changes)),
+        "highEngagementUpliftPercent": percent_difference(
+            average(high_engagement_changes),
+            average(low_engagement_changes),
+        ),
         "engagementCapturedAt": "2026-07-13",
     }
 
