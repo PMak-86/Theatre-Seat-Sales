@@ -86,7 +86,7 @@ function render(data) {
   const summary = data.summary || {};
   const reportHeader = data.campaignAnalysis
     ? "/assets/report-headers/finding-nemo-campaign-header.png"
-    : event.image_url;
+    : (event.report_header_url || event.image_url);
   const image = reportHeader ? `<img class="hero-image" src="${escapeHtml(reportHeader)}" alt="">` : "";
   reportEl.innerHTML = `
     <div class="report-actions no-print"><button id="print-report" type="button">Print / Save PDF</button></div>

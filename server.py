@@ -168,6 +168,54 @@ def supabase_select_all(path: str, page_size: int = 1000) -> list[dict[str, Any]
         offset += page_size
 
 
+def cache_report_header(event: dict[str, Any]) -> str | None:
+    cached_url = event.get("report_header_url")
+    if cached_url:
+        return str(cached_url)
+    source_url = event.get("image_url")
+    event_id = event.get("id")
+    if not source_url or not event_id or not storage_enabled():
+        return str(source_url) if source_url else None
+
+    try:
+        source_request = Request(
+            str(source_url),
+            headers={"Accept": "image/*,*/*;q=0.8", "User-Agent": "Mozilla/5.0"},
+        )
+        with urlopen(source_request, timeout=30) as response:
+            content_type = response.headers.get_content_type()
+            image_bytes = response.read(5 * 1024 * 1024 + 1)
+        if not content_type.startswith("image/") or len(image_bytes) > 5 * 1024 * 1024:
+            return str(source_url)
+
+        suffix = {"image/jpeg": "jpg", "image/png": "png", "image/webp": "webp"}.get(content_type, "jpg")
+        object_path = f"events/{event_id}/header.{suffix}"
+        storage_url = f"{SUPABASE_URL}/storage/v1/object/report-headers/{object_path}"
+        headers = {
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "Content-Type": content_type,
+            "x-upsert": "false",
+        }
+        try:
+            with urlopen(Request(storage_url, data=image_bytes, headers=headers, method="POST"), timeout=30):
+                pass
+        except HTTPError as exc:
+            if exc.code != 400:
+                raise
+
+        cached_url = f"{SUPABASE_URL}/storage/v1/object/public/report-headers/{object_path}"
+        supabase_request(
+            f"tracked_events?id=eq.{quote(str(event_id), safe='')}",
+            "PATCH",
+            {"report_header_url": cached_url},
+        )
+        event["report_header_url"] = cached_url
+        return cached_url
+    except (HTTPError, URLError, StorageError):
+        return str(source_url)
+
+
 def configure_supabase_cron_secret() -> bool:
     if not storage_enabled() or not SNAPSHOT_SECRET:
         return False
@@ -1513,7 +1561,7 @@ def store_snapshot(
         "last_seen_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
     tracked_rows = supabase_request(
-        "tracked_events?on_conflict=event_url",
+            "tracked_events?on_conflict=event_url",
         "POST",
         [tracked_payload],
         "resolution=merge-duplicates,return=representation",
@@ -2069,7 +2117,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         tracked = supabase_request(
             "tracked_events"
             f"?event_url=eq.{quote(event_url, safe='')}"
-            "&select=id,event_id,event_url,event_name,venue,location,image_url,date_start,date_end"
+            "&select=id,event_id,event_url,event_name,venue,location,image_url,report_header_url,date_start,date_end"
             "&order=last_seen_at.desc"
             "&limit=1"
         )
@@ -2077,7 +2125,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         tracked = supabase_request(
             "tracked_events"
             f"?event_id=eq.{event_id}"
-            "&select=id,event_id,event_url,event_name,venue,location,image_url,date_start,date_end"
+            "&select=id,event_id,event_url,event_name,venue,location,image_url,report_header_url,date_start,date_end"
             "&order=last_seen_at.desc"
             "&limit=1"
         )
@@ -2116,6 +2164,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
 def post_show_report(event_url: str) -> dict[str, Any]:
     history = event_history(event_url=event_url)
     event = history["event"]
+    cache_report_header(event)
     performances = history["performances"]
     final_rows = best_finalized_performance_rows(performances)
     final_sessions = [
