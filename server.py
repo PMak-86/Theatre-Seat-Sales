@@ -1560,6 +1560,10 @@ def store_snapshot(
         "is_active": True,
         "last_seen_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
     }
+    if not tracked_payload["image_url"]:
+        # A later source response without artwork must not overwrite an image
+        # retained from an earlier analysis.
+        del tracked_payload["image_url"]
     tracked_rows = supabase_request(
             "tracked_events?on_conflict=event_url",
         "POST",
@@ -1567,6 +1571,7 @@ def store_snapshot(
         "resolution=merge-duplicates,return=representation",
     )
     tracked = tracked_rows[0]
+    cache_report_header({**tracked, "image_url": data.get("imageUrl") or tracked.get("image_url")})
     summary = data["summary"]
     sessions_to_store = [
         session
