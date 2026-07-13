@@ -84,10 +84,13 @@ function campaignSection(analysis) {
 function render(data) {
   const event = data.event || {};
   const summary = data.summary || {};
-  const image = event.image_url ? `<img class="hero-image" src="${escapeHtml(event.image_url)}" alt="">` : "";
+  const reportHeader = data.campaignAnalysis
+    ? "/assets/report-headers/finding-nemo-campaign-header.png"
+    : event.image_url;
+  const image = reportHeader ? `<img class="hero-image" src="${escapeHtml(reportHeader)}" alt="">` : "";
   reportEl.innerHTML = `
     <div class="report-actions no-print"><button id="print-report" type="button">Print / Save PDF</button></div>
-    <section class="cover">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU")}</p></div></section>
+    <section class="cover${data.campaignAnalysis ? " campaign-cover" : ""}">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU")}</p></div></section>
     <section class="overview"><div class="ring"><b>${percentage(summary.effectiveSoldPercent)}</b><span>sold</span></div><div class="overview-copy"><h2>Run summary</h2><div class="summary-grid"><span><b>${number.format(summary.performances)}</b> Performances</span><span><b>${number.format(summary.totalSeats)}</b> Saleable seats</span><span><b>${number.format(summary.ticketsSold)}</b> Tickets sold</span><span><b>${money.format(summary.revenueEstimate?.amount || 0)}</b> Est. revenue</span></div></div></section>
     <section class="report-section"><h2>Sales across the run</h2><p class="subtle">Effective sold seats at each daily scheduled snapshot. Completed performances remain included in the run total.</p>${chart(data.dailySnapshots || [])}</section>
     ${campaignSection(data.campaignAnalysis)}

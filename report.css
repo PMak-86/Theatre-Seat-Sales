@@ -7,6 +7,7 @@ button { background: #071f3d; border: 0; border-radius: 5px; color: #fff; cursor
 .cover, .overview, .report-section { background: #fff; border: 1px solid #dfe5ea; margin-bottom: 18px; }
 .cover { min-height: 250px; overflow: hidden; position: relative; }
 .hero-image { height: 280px; object-fit: cover; width: 100%; }
+.campaign-cover { min-height: 180px; }.campaign-cover .hero-image { height: 180px; object-position:center 55%; }
 .cover-copy { background: rgba(7,31,61,.94); bottom: 0; color: #fff; left: 0; padding: 22px 28px; position: absolute; right: 0; }
 .cover-copy h1 { font-size: 32px; margin: 4px 0 8px; }
 .cover-copy p { margin: 4px 0; }
