@@ -655,10 +655,10 @@ function renderHistory(history) {
   historyStatusEl.textContent = snapshots.length === 1
     ? "1 daily snapshot collected. Uplift appears after the next scheduled snapshot."
     : `${formatNumber.format(snapshots.length)} daily snapshots collected.`;
-  setText("#uplift-day", signedNumber(history.uplift?.day?.effectiveSoldChange));
-  setText("#uplift-week", signedNumber(history.uplift?.week?.effectiveSoldChange));
+  setText("#uplift-day", signedNumber(history.uplift?.day?.actualSoldChange));
+  setText("#uplift-week", signedNumber(history.uplift?.week?.actualSoldChange));
   if (latest) {
-    historyStatusEl.textContent += ` Latest effective sold: ${formatNumber.format(latest.effective_sold)}.`;
+    historyStatusEl.textContent += ` Latest ticket sales: ${formatNumber.format(latest.actual_sold)}.`;
   }
   drawHistoryChart(snapshots);
 }
@@ -715,7 +715,7 @@ function drawHistoryChart(snapshots) {
     return;
   }
 
-  const values = snapshots.map((item) => Number(item.effective_sold || 0));
+  const values = snapshots.map((item) => Number(item.actual_sold || 0));
   const ticks = niceTicks(Math.min(...values, 0), Math.max(...values, 1), 5);
   const minValue = ticks[0];
   const maxValue = ticks[ticks.length - 1];
@@ -812,7 +812,7 @@ function showHistoryTooltip(point, clientX) {
 
   historyTooltipEl.innerHTML = `
     <strong>${formatSnapshotDateTime.format(date)}</strong>
-    <span>${formatNumber.format(point.value)} effective sold</span>
+    <span>${formatNumber.format(point.value)} tickets sold</span>
   `;
   historyTooltipEl.hidden = false;
   historyTooltipEl.style.left = `${pointLeft}px`;

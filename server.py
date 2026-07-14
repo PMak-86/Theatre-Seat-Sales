@@ -2198,7 +2198,9 @@ def post_show_report(event_url: str) -> dict[str, Any]:
             continue
         history_by_schedule.setdefault(schedule_id, []).append({
             "capturedAt": captured_at.isoformat(),
-            "effectiveSold": int(row.get("effective_sold") or 0),
+            # Performance history is ticket sales only. Sell-through retains its
+            # separate effective-sold calculation in the summary data.
+            "actualSold": int(row.get("actual_sold") or 0),
             "source": source,
         })
     for schedule_id, points in history_by_schedule.items():
@@ -2245,7 +2247,9 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
     if "salesevent/162924" not in event_url:
         return None
 
-    daily = {str(item.get("local_date")): int(item.get("effective_sold") or 0) for item in snapshots}
+    # Campaign response is based on ticket purchases, not holds or other seat
+    # classifications used by the sell-through calculation.
+    daily = {str(item.get("local_date")): int(item.get("actual_sold") or 0) for item in snapshots}
     posts = []
     post_changes = []
     for post_date, post_type, share_id, reactions, comments, shares in FINDING_NEMO_FACEBOOK_POSTS:
