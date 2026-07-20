@@ -4,6 +4,7 @@ const number = new Intl.NumberFormat("en-AU");
 const money = new Intl.NumberFormat("en-AU", { style: "currency", currency: "AUD", maximumFractionDigits: 0 });
 const dateFormat = new Intl.DateTimeFormat("en-AU", { weekday: "short", day: "numeric", month: "short", year: "numeric", timeZone: "Australia/Sydney" });
 const timeFormat = new Intl.DateTimeFormat("en-AU", { hour: "numeric", minute: "2-digit", timeZone: "Australia/Sydney" });
+const chartDateFormat = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "numeric", timeZone: "Australia/Sydney" });
 
 function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -39,7 +40,7 @@ function chart(points, className = "sales-chart", markers = []) {
   const xLabels = labelIndexes.map((index) => {
     const pointDate = new Date(points[index].capturedAt || points[index].captured_at);
     const anchor = index === 0 ? "" : index === labelIndexes[labelIndexes.length - 1] ? " right" : " middle";
-    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 8}">${dateFormat.format(pointDate)}</text>`;
+    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 8}">${chartDateFormat.format(pointDate)}</text>`;
   }).join("");
   const legend = validMarkers.length ? '<text class="chart-legend" x="44" y="14">Red = performance final snapshot</text>' : "";
   return `<svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time">${legend}<g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}${markerCircles}${xLabels}</svg>`;
