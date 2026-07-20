@@ -11,23 +11,38 @@ function escapeHtml(value) {
 
 function percentage(value) { return `${Number(value || 0).toFixed(1)}%`; }
 
-function chart(points, className = "sales-chart") {
+function chart(points, className = "sales-chart", markers = []) {
   if (!points.length) return '<p class="empty">No stored sales snapshots.</p>';
   const width = 680;
   const height = 180;
   const pad = { left: 44, right: 18, top: 18, bottom: 30 };
   const values = points.map((point) => Number(point.actualSold ?? point.actual_sold ?? 0));
-  const min = Math.max(0, Math.floor(Math.min(...values) / 10) * 10 - 10);
-  const max = Math.max(min + 1, Math.ceil(Math.max(...values) / 10) * 10 + 10);
-  const x = (index) => pad.left + (points.length === 1 ? (width - pad.left - pad.right) / 2 : index * (width - pad.left - pad.right) / (points.length - 1));
+  const validMarkers = markers.filter((marker) => marker.capturedAt && Number.isFinite(Number(marker.actualSold)));
+  const markerValues = validMarkers.map((marker) => Number(marker.actualSold));
+  const min = Math.max(0, Math.floor(Math.min(...values, ...markerValues) / 10) * 10 - 10);
+  const max = Math.max(min + 1, Math.ceil(Math.max(...values, ...markerValues) / 10) * 10 + 10);
+  const timestamps = points.map((point) => new Date(point.capturedAt || point.captured_at).getTime());
+  const markerTimes = validMarkers.map((marker) => new Date(marker.capturedAt).getTime());
+  const startTime = Math.min(...timestamps, ...markerTimes);
+  const endTime = Math.max(...timestamps, ...markerTimes);
+  const x = (timestamp) => pad.left + (startTime === endTime
+    ? (width - pad.left - pad.right) / 2
+    : (timestamp - startTime) * (width - pad.left - pad.right) / (endTime - startTime));
   const y = (value) => pad.top + (height - pad.top - pad.bottom) * (1 - (value - min) / (max - min));
-  const path = points.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(values[index]).toFixed(1)}`).join(" ");
+  const path = points.map((point, index) => `${index ? "L" : "M"}${x(timestamps[index]).toFixed(1)},${y(values[index]).toFixed(1)}`).join(" ");
   const ticks = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3);
   const grid = ticks.map((tick) => `<g><line x1="${pad.left}" x2="${width - pad.right}" y1="${y(tick)}" y2="${y(tick)}"/><text x="${pad.left - 8}" y="${y(tick) + 4}">${number.format(Math.round(tick))}</text></g>`).join("");
-  const circles = points.map((point, index) => `<circle cx="${x(index)}" cy="${y(values[index])}" r="3.5"><title>${new Date(point.capturedAt || point.captured_at).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(values[index])} sold</title></circle>`).join("");
-  const first = new Date(points[0].capturedAt || points[0].captured_at);
-  const last = new Date(points[points.length - 1].capturedAt || points[points.length - 1].captured_at);
-  return `<svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time"><g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}<text class="x-label" x="${pad.left}" y="${height - 8}">${dateFormat.format(first)}</text><text class="x-label right" x="${width - pad.right}" y="${height - 8}">${dateFormat.format(last)}</text></svg>`;
+  const circles = points.map((point, index) => `<circle cx="${x(timestamps[index])}" cy="${y(values[index])}" r="3.5"><title>${new Date(point.capturedAt || point.captured_at).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(values[index])} sold</title></circle>`).join("");
+  const markerCircles = validMarkers.map((marker) => `<circle class="final-marker" cx="${x(new Date(marker.capturedAt).getTime())}" cy="${y(Number(marker.actualSold))}" r="5"><title>Final snapshot: ${new Date(marker.capturedAt).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(marker.actualSold)} tickets sold</title></circle>`).join("");
+  const labelCount = Math.min(5, points.length);
+  const labelIndexes = labelCount === 1 ? [0] : Array.from({ length: labelCount }, (_, index) => Math.round(index * (points.length - 1) / (labelCount - 1))).filter((index, position, all) => all.indexOf(index) === position);
+  const xLabels = labelIndexes.map((index) => {
+    const pointDate = new Date(points[index].capturedAt || points[index].captured_at);
+    const anchor = index === 0 ? "" : index === labelIndexes[labelIndexes.length - 1] ? " right" : " middle";
+    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 8}">${dateFormat.format(pointDate)}</text>`;
+  }).join("");
+  const legend = validMarkers.length ? '<text class="chart-legend" x="44" y="14">Red = performance final snapshot</text>' : "";
+  return `<svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time">${legend}<g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}${markerCircles}${xLabels}</svg>`;
 }
 
 function seatMap(map) {
@@ -92,7 +107,7 @@ function render(data) {
     <div class="report-actions no-print"><button id="print-report" type="button">Print / Save PDF</button></div>
     <section class="cover${data.campaignAnalysis ? " campaign-cover" : ""}">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU")}</p></div></section>
     <section class="overview"><div class="ring"><b>${percentage(summary.effectiveSoldPercent)}</b><span>sold</span></div><div class="overview-copy"><h2>Run summary</h2><div class="summary-grid"><span><b>${number.format(summary.performances)}</b> Performances</span><span><b>${number.format(summary.totalSeats)}</b> Saleable seats</span><span><b>${number.format(summary.ticketsSold)}</b> Tickets sold</span><span><b>${money.format(summary.revenueEstimate?.amount || 0)}</b> Est. revenue</span></div></div></section>
-    <section class="report-section"><h2>Sales across the run</h2><p class="subtle">Actual ticket sales at each daily scheduled snapshot. Completed performances remain included in the run total.</p>${chart(data.dailySnapshots || [])}</section>
+    <section class="report-section"><h2>Sales across the run</h2><p class="subtle">Actual ticket sales at each daily scheduled snapshot. Red points identify the final snapshot for a performance; completed performances remain included in the run total.</p>${chart(data.dailySnapshots || [], "sales-chart", data.finalSnapshotMarkers || [])}</section>
     ${campaignSection(data.campaignAnalysis)}
     <section class="report-section"><h2>Performance final results</h2><div class="final-table"><div class="table-head"><span>Date</span><span>Time</span><span>Sold</span><span>Capacity</span><span>Sold %</span><span>Revenue</span></div>${(data.performances || []).map((session) => { const when = new Date(session.dateTime); return `<div class="table-row"><span>${dateFormat.format(when)}</span><span>${timeFormat.format(when)}</span><span>${number.format(session.ticketsSold)}</span><span>${number.format(session.totalSeats)}</span><span>${percentage(session.effectiveSoldPercent)}</span><span>${session.revenueEstimate?.amount == null ? "-" : money.format(session.revenueEstimate.amount)}</span></div>`; }).join("")}</div></section>
     <section class="report-section performances"><h2>Performance detail</h2>${(data.performances || []).map((session) => sessionCard(session, data.performanceHistory || {})).join("")}</section>

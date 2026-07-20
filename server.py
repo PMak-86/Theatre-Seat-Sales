@@ -2154,7 +2154,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
         f"?tracked_event_id=eq.{tracked_event['id']}"
         "&select=event_snapshot_id,schedule_id,show_datetime,description,total_seats,actual_sold,effective_sold,"
         "unavailable,available,actual_sold_percent,effective_sold_percent,unavailable_percent,breakdown,"
-        "event_snapshots(id,source,captured_at)"
+        "event_snapshots(id,source,captured_at,actual_sold)"
         "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
     )
     daily_snapshots = corrected_daily_snapshot_series(snapshots, performances)
@@ -2211,6 +2211,20 @@ def post_show_report(event_url: str) -> dict[str, Any]:
                 deduped.append(point)
         history_by_schedule[schedule_id] = deduped
 
+    final_snapshot_markers = []
+    for schedule_id, row in final_rows.items():
+        source = snapshot_source(row)
+        snapshot = row.get("event_snapshots") or {}
+        captured_at = snapshot_captured_at(row)
+        if source not in {"final", "retired"} or not captured_at:
+            continue
+        final_snapshot_markers.append({
+            "scheduleId": schedule_id,
+            "capturedAt": captured_at.isoformat(),
+            "actualSold": int(snapshot.get("actual_sold") or 0),
+            "source": source,
+        })
+
     return {
         "event": event,
         "summary": report_data["summary"],
@@ -2218,6 +2232,7 @@ def post_show_report(event_url: str) -> dict[str, Any]:
         "uplift": history["uplift"],
         "performances": final_sessions,
         "performanceHistory": history_by_schedule,
+        "finalSnapshotMarkers": final_snapshot_markers,
         "campaignAnalysis": finding_nemo_campaign_analysis(event_url, history["snapshots"]),
         "complete": bool(final_sessions) and len(final_sessions) == len(final_rows),
     }
