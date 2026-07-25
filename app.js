@@ -520,7 +520,13 @@ function baselineLabel(value) {
 }
 
 function finalNumbersBadge(session) {
-  if (!session.isFinal) return "";
+  if (!session.isFinal && !session.isHistoricalSnapshot) return "";
+  if (!session.isFinal) {
+    const captured = session.finalSnapshotCapturedAt
+      ? `Last recorded snapshot captured ${formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt))}. No confirmed final snapshot was stored.`
+      : "Last recorded snapshot. No confirmed final snapshot was stored.";
+    return `<span class="final-badge last-recorded-badge" title="${escapeHtml(captured)}">Last recorded</span>`;
+  }
   const sourceNote = session.finalSnapshotSource === "retired"
     ? "using retired schedule snapshot"
     : session.finalSnapshotIsFallback

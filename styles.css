@@ -572,6 +572,12 @@ td.numeric {
   white-space: nowrap;
 }
 
+.last-recorded-badge {
+  background: #fff4dc;
+  border-color: #e8bd66;
+  color: #6c4b09;
+}
+
 .final-note .final-badge {
   margin-left: 0;
 }

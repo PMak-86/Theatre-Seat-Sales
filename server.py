@@ -1660,6 +1660,7 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
     snapshot = row.get("event_snapshots") or {}
     source = str(snapshot.get("source") or "")
     breakdown, seat_map, revenue = parse_performance_snapshot_details(row.get("breakdown"))
+    confirmed_final = source in {"final", "retired"}
     session = {
         "scheduleId": int(row["schedule_id"]),
         "dateTime": performance_wall_datetime_label(row.get("show_datetime")),
@@ -1674,7 +1675,10 @@ def performance_snapshot_to_session(row: dict[str, Any]) -> dict[str, Any]:
         "unavailablePercent": float(row.get("unavailable_percent") or 0),
         "notAvailableSeats": int(row.get("actual_sold") or 0) + int(row.get("unavailable") or 0),
         "breakdown": breakdown,
-        "isFinal": True,
+        # A search or daily observation from before a performance is useful
+        # context, but it is not a confirmed end-of-sale figure.
+        "isFinal": confirmed_final,
+        "isHistoricalSnapshot": not confirmed_final,
         "finalSnapshotCapturedAt": snapshot.get("captured_at"),
         "finalSnapshotSource": source,
         "finalSnapshotIsFallback": source != "final",
@@ -1984,6 +1988,88 @@ def retired_snapshot_candidates(
     return candidates
 
 
+def missing_imminent_ticketsearch_candidates(
+    tracked_event_id: str,
+    live_schedule_ids: set[int],
+    now_utc: datetime,
+    window_minutes: int,
+    late_grace_minutes: int,
+) -> list[dict[str, Any]]:
+    """Return recently stored schedules that disappeared just before showtime.
+
+    TicketSearch occasionally removes a performance from GetEventSchedules
+    before it starts. Retain its schedule ID long enough to try the
+    schedule-level seat-map endpoint during the final-snapshot window.
+    """
+    rows = supabase_select_all(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked_event_id}"
+        "&select=schedule_id,show_datetime,description,total_seats,"
+        "event_snapshots!inner(source,captured_at)"
+        "&order=event_snapshot_id.desc"
+    )
+    window_start = now_utc - timedelta(minutes=late_grace_minutes)
+    window_end = now_utc + timedelta(minutes=window_minutes)
+    candidates: dict[int, tuple[datetime, dict[str, Any]]] = {}
+    for row in rows:
+        schedule_id = int(row.get("schedule_id") or 0)
+        if not schedule_id or schedule_id in live_schedule_ids or int(row.get("total_seats") or 0) <= 0:
+            continue
+        show_time = parse_performance_wall_datetime(row.get("show_datetime"))
+        if not show_time or not window_start <= show_time <= window_end:
+            continue
+        snapshot = row.get("event_snapshots") or {}
+        captured_at = parse_event_datetime(snapshot.get("captured_at"))
+        if not captured_at or captured_at > show_time:
+            continue
+        existing = candidates.get(schedule_id)
+        if existing is None or captured_at > existing[0]:
+            candidates[schedule_id] = (captured_at, row)
+    return [item[1] for item in candidates.values()]
+
+
+def analyse_ticketsearch_schedule_candidates(
+    event_url: str,
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Attempt direct seat-map analysis for schedules no longer in the list."""
+    if not candidates:
+        return []
+    org, mask_url, event_id = parse_event_input(event_url)
+    token = get_guest_token(org, mask_url)
+    event = api_result(
+        request_json(
+            f"{API_BASE}/OnlineApi/SalesEventDetail/GetEventDetail?eventId={event_id}",
+            token,
+            origin=mask_url,
+            referer=f"{mask_url}/sales/salesevent/{event_id}",
+        ),
+        "SalesEventDetail",
+    )
+    if not event:
+        return []
+
+    recovered = []
+    for candidate in candidates:
+        try:
+            session = analyse_session(
+                token,
+                event_id,
+                event,
+                {
+                    "EventScheduleId": int(candidate["schedule_id"]),
+                    "ScheduleStartDate": candidate.get("show_datetime"),
+                    "SessionDescription": candidate.get("description"),
+                },
+                mask_url,
+            )
+        except TicketSearchError:
+            continue
+        if int(session.get("totalSeats") or 0) > 0:
+            recovered.append(session)
+    return recovered
+
+
 def analyse_retired_ticketsearch_sessions(
     data: dict[str, Any],
     tracked_event_id: str,
@@ -2056,6 +2142,27 @@ def run_final_snapshots(
                 continue
 
             data = analyse_any_event(event["event_url"])
+            if data.get("provider") == "ticketsearch":
+                live_schedule_ids = {
+                    int(session["scheduleId"])
+                    for session in data.get("sessions", [])
+                    if session.get("scheduleId") is not None
+                }
+                missing_candidates = missing_imminent_ticketsearch_candidates(
+                    event["id"],
+                    live_schedule_ids,
+                    now_utc,
+                    window_minutes,
+                    late_grace_minutes,
+                )
+                recovered_sessions = analyse_ticketsearch_schedule_candidates(
+                    event["event_url"],
+                    missing_candidates,
+                )
+                if recovered_sessions:
+                    data["sessions"].extend(recovered_sessions)
+                    data["sessions"].sort(key=lambda item: item.get("dateTime") or "")
+                    recompute_summary(data)
             already_final = final_snapshot_schedule_ids(
                 event["id"],
                 window_minutes,
@@ -2435,8 +2542,6 @@ def best_finalized_performance_rows(performances: list[dict[str, Any]]) -> dict[
             priority = 4
         elif source == "final":
             priority = 3
-        elif captured_at <= show_time:
-            priority = 2
         else:
             continue
         rank = (priority, captured_at.timestamp())
