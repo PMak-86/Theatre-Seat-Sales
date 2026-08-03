@@ -15,13 +15,12 @@ function percentage(value) { return `${Number(value || 0).toFixed(1)}%`; }
 function chart(points, className = "sales-chart", markers = []) {
   if (!points.length) return '<p class="empty">No stored sales snapshots.</p>';
   const width = 680;
-  const height = 180;
-  const pad = { left: 44, right: 18, top: 18, bottom: 30 };
+  const height = 196;
+  const pad = { left: 44, right: 18, top: 18, bottom: 48 };
   const values = points.map((point) => Number(point.actualSold ?? point.actual_sold ?? 0));
-  const validMarkers = markers.filter((marker) => marker.capturedAt && Number.isFinite(Number(marker.actualSold)));
-  const markerValues = validMarkers.map((marker) => Number(marker.actualSold));
-  const min = Math.max(0, Math.floor(Math.min(...values, ...markerValues) / 10) * 10 - 10);
-  const max = Math.max(min + 1, Math.ceil(Math.max(...values, ...markerValues) / 10) * 10 + 10);
+  const validMarkers = markers.filter((marker) => marker.capturedAt && Number.isFinite(new Date(marker.capturedAt).getTime()));
+  const min = Math.max(0, Math.floor(Math.min(...values) / 10) * 10 - 10);
+  const max = Math.max(min + 1, Math.ceil(Math.max(...values) / 10) * 10 + 10);
   const timestamps = points.map((point) => new Date(point.capturedAt || point.captured_at).getTime());
   const markerTimes = validMarkers.map((marker) => new Date(marker.capturedAt).getTime());
   const startTime = Math.min(...timestamps, ...markerTimes);
@@ -30,19 +29,33 @@ function chart(points, className = "sales-chart", markers = []) {
     ? (width - pad.left - pad.right) / 2
     : (timestamp - startTime) * (width - pad.left - pad.right) / (endTime - startTime));
   const y = (value) => pad.top + (height - pad.top - pad.bottom) * (1 - (value - min) / (max - min));
+  const cumulativeValueAt = (timestamp) => {
+    if (timestamp <= timestamps[0]) return values[0];
+    if (timestamp >= timestamps[timestamps.length - 1]) return values[values.length - 1];
+    const nextIndex = timestamps.findIndex((pointTime) => pointTime >= timestamp);
+    const previousIndex = Math.max(0, nextIndex - 1);
+    const span = timestamps[nextIndex] - timestamps[previousIndex];
+    if (!span) return values[previousIndex];
+    const progress = (timestamp - timestamps[previousIndex]) / span;
+    return values[previousIndex] + ((values[nextIndex] - values[previousIndex]) * progress);
+  };
   const path = points.map((point, index) => `${index ? "L" : "M"}${x(timestamps[index]).toFixed(1)},${y(values[index]).toFixed(1)}`).join(" ");
   const ticks = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3);
   const grid = ticks.map((tick) => `<g><line x1="${pad.left}" x2="${width - pad.right}" y1="${y(tick)}" y2="${y(tick)}"/><text x="${pad.left - 8}" y="${y(tick) + 4}">${number.format(Math.round(tick))}</text></g>`).join("");
   const circles = points.map((point, index) => `<circle cx="${x(timestamps[index])}" cy="${y(values[index])}" r="3.5"><title>${new Date(point.capturedAt || point.captured_at).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(values[index])} sold</title></circle>`).join("");
-  const markerCircles = validMarkers.map((marker) => `<circle class="final-marker" cx="${x(new Date(marker.capturedAt).getTime())}" cy="${y(Number(marker.actualSold))}" r="5"><title>Final snapshot: ${new Date(marker.capturedAt).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(marker.actualSold)} tickets sold</title></circle>`).join("");
+  const markerCircles = validMarkers.map((marker) => {
+    const timestamp = new Date(marker.capturedAt).getTime();
+    const cumulativeSold = cumulativeValueAt(timestamp);
+    return `<circle class="final-marker" cx="${x(timestamp)}" cy="${y(cumulativeSold)}" r="5"><title>Performance final snapshot: ${new Date(marker.capturedAt).toLocaleString("en-AU", { timeZone: "Australia/Sydney" }).replace(",", "")}. Cumulative run sales: ${number.format(Math.round(cumulativeSold))}</title></circle>`;
+  }).join("");
   const labelCount = Math.min(5, points.length);
   const labelIndexes = labelCount === 1 ? [0] : Array.from({ length: labelCount }, (_, index) => Math.round(index * (points.length - 1) / (labelCount - 1))).filter((index, position, all) => all.indexOf(index) === position);
   const xLabels = labelIndexes.map((index) => {
     const pointDate = new Date(points[index].capturedAt || points[index].captured_at);
     const anchor = index === 0 ? "" : index === labelIndexes[labelIndexes.length - 1] ? " right" : " middle";
-    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 8}">${chartDateFormat.format(pointDate)}</text>`;
+    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 22}">${chartDateFormat.format(pointDate)}</text>`;
   }).join("");
-  const legend = validMarkers.length ? '<text class="chart-legend" x="44" y="14">Red = performance final snapshot</text>' : "";
+  const legend = validMarkers.length ? `<text class="chart-legend" x="44" y="${height - 4}">Red = performance final snapshot</text>` : "";
   return `<svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time">${legend}<g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}${markerCircles}${xLabels}</svg>`;
 }
 

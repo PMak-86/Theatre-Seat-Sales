@@ -2506,12 +2506,23 @@ SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
     ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm", 25),
 ]
 
+SONGS_REEL_ENGAGEMENT = {
+    # Facebook's standard post surface for this reel shows 30 reactions,
+    # 1 comment and 14 shares. The full-screen reel view mixes those counters
+    # with view metrics, so only directly verified values are recorded.
+    "1DL3weiBWf": (30, 1, 14),
+}
+
 
 def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
     daily = {str(item.get("local_date")): int(item.get("actual_sold") or 0) for item in snapshots}
     posts = []
     post_changes = []
     for index, (post_date, post_type, share_id, theme, reactions) in enumerate(SONGS_OF_THE_STAGE_FACEBOOK_POSTS, start=1):
+        reel_engagement = SONGS_REEL_ENGAGEMENT.get(share_id)
+        post_reactions = reel_engagement[0] if reel_engagement else reactions
+        comments = reel_engagement[1] if reel_engagement else None
+        shares = reel_engagement[2] if reel_engagement else None
         next_date = (date.fromisoformat(post_date) + timedelta(days=1)).isoformat()
         change = daily[next_date] - daily[post_date] if post_date in daily and next_date in daily else None
         if change is not None:
@@ -2522,10 +2533,10 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
             "theme": theme,
             "url": f"https://www.facebook.com/share/{'r' if post_type == 'video' else 'p'}/{share_id}/",
             "screenshot": f"/assets/facebook-songs-of-the-stage/{index:02d}.png",
-            "reactions": reactions,
-            "comments": None,
-            "shares": None,
-            "engagementTotal": None,
+            "reactions": post_reactions,
+            "comments": comments,
+            "shares": shares,
+            "engagementTotal": sum(reel_engagement) if reel_engagement else None,
             "nextSnapshotDate": next_date,
             "nextDayTicketChange": change,
         })
