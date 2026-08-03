@@ -2502,8 +2502,8 @@ SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
     ("2026-07-31", "post", "1G2YU2DtKE", "Final-week urgency"),
     ("2026-08-01", "post", "19SKHUYHzL", "Closing-day reminder"),
     ("2026-08-01", "post", "1G5TktBMP7", "Closing-day performance content"),
-    ("2026-08-01", "post", "18CT9mjjDJ", "Closing-day urgency"),
-    ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 closing offer"),
+    ("2026-08-01", "post", "18CT9mjjDJ", "2-for-1 offer, 8:22 am"),
+    ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm"),
 ]
 
 
@@ -2551,7 +2551,7 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
         "writtenAnalysis": (
             "Early launch and rehearsal material coincided with low, steady daily movement. "
             "The countdown and opening-week sequence coincided with a sustained acceleration: daily actual-ticket growth rose from 9-26 tickets in the week before opening to 31-67 tickets across the first week of the run. "
-            "The 2-for-1 closing offer was posted on 1 August at 3:26 pm. The closest stored scans show 44 additional actual tickets before the last evening scan, and 80 additional tickets from that morning's scheduled snapshot. "
+            "The 2-for-1 offer began on 1 August at 8:22 am, followed by a 3:26 pm final-chance reminder. Actual ticket sales increased by 36 by the closest midday scan and by 80 from that morning's scheduled snapshot to the final evening scan; 44 of those sales occurred after the afternoon reminder. "
             "That is a strong final-day association, but it cannot isolate the offer from normal closing-night urgency and walk-up demand."
         ),
     }
