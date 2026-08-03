@@ -2473,37 +2473,37 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
 # consistently expose their counter labels, so those values remain blank rather
 # than being guessed.
 SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
-    ("2026-06-22", "post", "1BAmwDCYAv", "Launch announcement"),
-    ("2026-06-25", "video", "18CriseU7H", "Performance reel"),
-    ("2026-06-29", "post", "1JB8r1Murx", "Live band rehearsal"),
-    ("2026-07-03", "video", "1DDd1uawJb", "Performance reel"),
-    ("2026-07-06", "post", "1DBULrbYo9", "Rehearsal and dates"),
-    ("2026-07-10", "video", "19NK7fHij2", "Two-week countdown reel"),
-    ("2026-07-12", "post", "1DUePFCJbV", "Sitzprobe preview"),
-    ("2026-07-14", "video", "19EE6VxHMi", "Cast performance reel"),
-    ("2026-07-15", "post", "1AgFWf5ZAX", "Cast rehearsal"),
-    ("2026-07-16", "video", "1DL3weiBWf", "Cast performance reel"),
-    ("2026-07-17", "post", "1LD6Qbx2nE", "Seven-day countdown"),
-    ("2026-07-18", "post", "19JJHamHPz", "Six-day countdown"),
-    ("2026-07-19", "post", "1Q6B8s33dD", "Five-day countdown"),
-    ("2026-07-20", "post", "192o12y81H", "Four-day countdown"),
-    ("2026-07-21", "post", "1GApLkdq7X", "Three-day countdown"),
-    ("2026-07-22", "post", "19RakDiR1u", "Two-day countdown"),
-    ("2026-07-23", "post", "1GsEB3x2uH", "Opening-night urgency"),
-    ("2026-07-24", "post", "1DG4vDFhn3", "Opening-night content"),
-    ("2026-07-25", "post", "1E1jTugG4X", "Weekend performance content"),
-    ("2026-07-25", "post", "1Dr7J47k5E", "Weekend performance content"),
-    ("2026-07-26", "post", "1BfrN2UoBS", "Audience and performance content"),
-    ("2026-07-27", "post", "1BgSRMqqbK", "Mid-run reminder"),
-    ("2026-07-28", "post", "195ZVfpUyB", "Cast and performance content"),
-    ("2026-07-30", "post", "1CtPgb3APW", "Audience review"),
-    ("2026-07-30", "post", "14iuEkmgWqa", "Late-run reminder"),
-    ("2026-07-31", "post", "1DKtcsrtbn", "Final-week urgency"),
-    ("2026-07-31", "post", "1G2YU2DtKE", "Final-week urgency"),
-    ("2026-08-01", "post", "19SKHUYHzL", "Closing-day reminder"),
-    ("2026-08-01", "post", "1G5TktBMP7", "Closing-day performance content"),
-    ("2026-08-01", "post", "18CT9mjjDJ", "2-for-1 offer, 8:22 am"),
-    ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm"),
+    ("2026-06-22", "post", "1BAmwDCYAv", "Launch announcement", 11),
+    ("2026-06-25", "video", "18CriseU7H", "Performance reel", None),
+    ("2026-06-29", "post", "1JB8r1Murx", "Live band rehearsal", 11),
+    ("2026-07-03", "video", "1DDd1uawJb", "Performance reel", None),
+    ("2026-07-06", "post", "1DBULrbYo9", "Rehearsal and dates", 9),
+    ("2026-07-10", "video", "19NK7fHij2", "Two-week countdown reel", None),
+    ("2026-07-12", "post", "1DUePFCJbV", "Sitzprobe preview", 23),
+    ("2026-07-14", "video", "19EE6VxHMi", "Cast performance reel", None),
+    ("2026-07-15", "post", "1AgFWf5ZAX", "Cast rehearsal", 19),
+    ("2026-07-16", "video", "1DL3weiBWf", "Cast performance reel", None),
+    ("2026-07-17", "post", "1LD6Qbx2nE", "Seven-day countdown", 6),
+    ("2026-07-18", "post", "19JJHamHPz", "Six-day countdown", 13),
+    ("2026-07-19", "post", "1Q6B8s33dD", "Five-day countdown", 6),
+    ("2026-07-20", "post", "192o12y81H", "Four-day countdown", 13),
+    ("2026-07-21", "post", "1GApLkdq7X", "Three-day countdown", 4),
+    ("2026-07-22", "post", "19RakDiR1u", "Two-day countdown", 25),
+    ("2026-07-23", "post", "1GsEB3x2uH", "Opening-night urgency", 25),
+    ("2026-07-24", "post", "1DG4vDFhn3", "Opening-night content", 25),
+    ("2026-07-25", "post", "1E1jTugG4X", "Weekend performance content", 25),
+    ("2026-07-25", "post", "1Dr7J47k5E", "Weekend performance content", 25),
+    ("2026-07-26", "post", "1BfrN2UoBS", "Audience and performance content", 13),
+    ("2026-07-27", "post", "1BgSRMqqbK", "Mid-run reminder", 25),
+    ("2026-07-28", "post", "195ZVfpUyB", "Cast and performance content", 25),
+    ("2026-07-30", "post", "1CtPgb3APW", "Audience review", 25),
+    ("2026-07-30", "post", "14iuEkmgWqa", "Late-run reminder", 13),
+    ("2026-07-31", "post", "1DKtcsrtbn", "Final-week urgency", 13),
+    ("2026-07-31", "post", "1G2YU2DtKE", "Final-week urgency", 25),
+    ("2026-07-30", "post", "19SKHUYHzL", "Audience review", 25),
+    ("2026-07-31", "post", "1G5TktBMP7", "Final-week reminder", 25),
+    ("2026-08-01", "post", "18CT9mjjDJ", "2-for-1 offer, 8:22 am", 25),
+    ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm", 25),
 ]
 
 
@@ -2511,7 +2511,7 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
     daily = {str(item.get("local_date")): int(item.get("actual_sold") or 0) for item in snapshots}
     posts = []
     post_changes = []
-    for index, (post_date, post_type, share_id, theme) in enumerate(SONGS_OF_THE_STAGE_FACEBOOK_POSTS, start=1):
+    for index, (post_date, post_type, share_id, theme, reactions) in enumerate(SONGS_OF_THE_STAGE_FACEBOOK_POSTS, start=1):
         next_date = (date.fromisoformat(post_date) + timedelta(days=1)).isoformat()
         change = daily[next_date] - daily[post_date] if post_date in daily and next_date in daily else None
         if change is not None:
@@ -2522,7 +2522,7 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
             "theme": theme,
             "url": f"https://www.facebook.com/share/{'r' if post_type == 'video' else 'p'}/{share_id}/",
             "screenshot": f"/assets/facebook-songs-of-the-stage/{index:02d}.png",
-            "reactions": None,
+            "reactions": reactions,
             "comments": None,
             "shares": None,
             "engagementTotal": None,
