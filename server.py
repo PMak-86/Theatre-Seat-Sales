@@ -2490,21 +2490,43 @@ SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
     ("2026-07-21", "post", "1GApLkdq7X", "Three-day countdown", 4),
     ("2026-07-22", "post", "19RakDiR1u", "Two-day countdown", 25),
     ("2026-07-23", "post", "1GsEB3x2uH", "Opening-night urgency", 25),
-    ("2026-07-24", "post", "1DG4vDFhn3", "Opening-night content", 25),
-    ("2026-07-25", "post", "1E1jTugG4X", "Weekend performance content", 25),
+    ("2026-07-22", "post", "1DG4vDFhn3", "Opening-night content", 25),
+    ("2026-07-24", "post", "1E1jTugG4X", "Weekend performance content", 25),
     ("2026-07-25", "post", "1Dr7J47k5E", "Weekend performance content", 25),
-    ("2026-07-26", "post", "1BfrN2UoBS", "Audience and performance content", 13),
-    ("2026-07-27", "post", "1BgSRMqqbK", "Mid-run reminder", 25),
-    ("2026-07-28", "post", "195ZVfpUyB", "Cast and performance content", 25),
-    ("2026-07-30", "post", "1CtPgb3APW", "Audience review", 25),
-    ("2026-07-30", "post", "14iuEkmgWqa", "Late-run reminder", 13),
-    ("2026-07-31", "post", "1DKtcsrtbn", "Final-week urgency", 13),
-    ("2026-07-31", "post", "1G2YU2DtKE", "Final-week urgency", 25),
+    ("2026-07-25", "post", "1BfrN2UoBS", "Audience and performance content", 13),
+    ("2026-07-26", "post", "1BgSRMqqbK", "Mid-run reminder", 25),
+    ("2026-07-27", "post", "195ZVfpUyB", "Cast and performance content", 25),
+    ("2026-07-28", "post", "1CtPgb3APW", "Audience review", 25),
+    ("2026-07-28", "post", "14iuEkmgWqa", "Late-run reminder", 13),
+    ("2026-07-29", "post", "1DKtcsrtbn", "Final-week urgency", 13),
+    ("2026-07-30", "post", "1G2YU2DtKE", "Final-week urgency", 25),
     ("2026-07-30", "post", "19SKHUYHzL", "Audience review", 25),
     ("2026-07-31", "post", "1G5TktBMP7", "Final-week reminder", 25),
     ("2026-08-01", "post", "18CT9mjjDJ", "2-for-1 offer, 8:22 am", 25),
     ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm", 25),
 ]
+
+# Timestamps audited from the date/time shown below the Facebook page name.
+# Reels do not expose a corresponding timestamp in their saved capture, so
+# their original campaign ordering is retained with a neutral midday time.
+SONGS_FACEBOOK_POST_TIMESTAMPS = {
+    "1BAmwDCYAv": "2026-06-22T12:00:00+10:00", "18CriseU7H": "2026-06-25T12:00:00+10:00",
+    "1JB8r1Murx": "2026-06-29T12:00:00+10:00", "1DDd1uawJb": "2026-07-03T12:00:00+10:00",
+    "1DBULrbYo9": "2026-07-06T18:21:00+10:00", "19NK7fHij2": "2026-07-10T12:00:00+10:00",
+    "1DUePFCJbV": "2026-07-12T21:09:00+10:00", "19EE6VxHMi": "2026-07-14T12:00:00+10:00",
+    "1AgFWf5ZAX": "2026-07-15T15:41:00+10:00", "1DL3weiBWf": "2026-07-16T18:35:00+10:00",
+    "1LD6Qbx2nE": "2026-07-17T08:00:00+10:00", "19JJHamHPz": "2026-07-18T10:00:00+10:00",
+    "1Q6B8s33dD": "2026-07-19T10:00:00+10:00", "192o12y81H": "2026-07-20T17:15:00+10:00",
+    "1GApLkdq7X": "2026-07-21T17:00:00+10:00", "19RakDiR1u": "2026-07-22T17:00:00+10:00",
+    "1DG4vDFhn3": "2026-07-22T17:00:00+10:00", "1GsEB3x2uH": "2026-07-23T17:00:00+10:00",
+    "1E1jTugG4X": "2026-07-24T13:04:00+10:00", "1Dr7J47k5E": "2026-07-25T09:48:00+10:00",
+    "1BfrN2UoBS": "2026-07-25T18:47:00+10:00", "1BgSRMqqbK": "2026-07-26T08:16:00+10:00",
+    "195ZVfpUyB": "2026-07-27T12:00:00+10:00", "14iuEkmgWqa": "2026-07-28T07:53:00+10:00",
+    "1CtPgb3APW": "2026-07-28T09:40:00+10:00", "1DKtcsrtbn": "2026-07-29T18:50:00+10:00",
+    "1G2YU2DtKE": "2026-07-30T10:20:00+10:00", "19SKHUYHzL": "2026-07-30T20:28:00+10:00",
+    "1G5TktBMP7": "2026-07-31T14:03:00+10:00", "18CT9mjjDJ": "2026-08-01T08:22:00+10:00",
+    "1BV5PA5a2P": "2026-08-01T15:26:00+10:00",
+}
 
 SONGS_FACEBOOK_ENGAGEMENT = {
     # Current public Facebook counters captured from each supplied post's
@@ -2558,6 +2580,8 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
             post_changes.append(change)
         posts.append({
             "date": post_date,
+            "postedAt": SONGS_FACEBOOK_POST_TIMESTAMPS.get(share_id, f"{post_date}T12:00:00+10:00"),
+            "timestampVerified": post_type != "video",
             "type": post_type,
             "theme": theme,
             "url": f"https://www.facebook.com/share/{'r' if post_type == 'video' else 'p'}/{share_id}/",
@@ -2569,6 +2593,7 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
             "nextSnapshotDate": next_date,
             "nextDayTicketChange": change,
         })
+    posts.sort(key=lambda post: post["postedAt"])
 
     post_dates = {post["date"] for post in posts}
     non_post_changes = []
