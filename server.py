@@ -2506,11 +2506,40 @@ SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
     ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 final-chance reminder, 3:26 pm", 25),
 ]
 
-SONGS_REEL_ENGAGEMENT = {
-    # Facebook's standard post surface for this reel shows 30 reactions,
-    # 1 comment and 14 shares. The full-screen reel view mixes those counters
-    # with view metrics, so only directly verified values are recorded.
+SONGS_FACEBOOK_ENGAGEMENT = {
+    # Current public Facebook counters captured from each supplied post's
+    # labelled reactions, comments and share controls.
+    "1BAmwDCYAv": (24, 0, 8),
+    "18CriseU7H": (37, 0, 27),
+    "1JB8r1Murx": (23, 0, 13),
+    "1DDd1uawJb": (29, 0, 13),
+    "1DBULrbYo9": (21, 1, 21),
+    "19NK7fHij2": (25, 0, 20),
+    "1DUePFCJbV": (41, 0, 21),
+    "19EE6VxHMi": (32, 0, 31),
+    "1AgFWf5ZAX": (32, 0, 12),
     "1DL3weiBWf": (30, 1, 14),
+    "1LD6Qbx2nE": (17, 0, 16),
+    "19JJHamHPz": (17, 0, 20),
+    "1Q6B8s33dD": (21, 0, 17),
+    "192o12y81H": (14, 0, 15),
+    "1GApLkdq7X": (15, 1, 11),
+    "19RakDiR1u": (15, 1, 15),
+    "1GsEB3x2uH": (22, 0, 16),
+    "1DG4vDFhn3": (13, 0, 3),
+    "1E1jTugG4X": (47, 1, 31),
+    "1Dr7J47k5E": (186, 19, 19),
+    "1BfrN2UoBS": (15, 1, 2),
+    "1BgSRMqqbK": (30, 2, 2),
+    "195ZVfpUyB": (73, 2, 36),
+    "1CtPgb3APW": (55, 5, 13),
+    "14iuEkmgWqa": (39, 3, 13),
+    "1DKtcsrtbn": (23, 2, 13),
+    "1G2YU2DtKE": (39, 1, 9),
+    "19SKHUYHzL": (32, 1, 12),
+    "1G5TktBMP7": (29, 1, 18),
+    "18CT9mjjDJ": (51, 1, 18),
+    "1BV5PA5a2P": (55, 5, 11),
 }
 
 
@@ -2519,10 +2548,10 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
     posts = []
     post_changes = []
     for index, (post_date, post_type, share_id, theme, reactions) in enumerate(SONGS_OF_THE_STAGE_FACEBOOK_POSTS, start=1):
-        reel_engagement = SONGS_REEL_ENGAGEMENT.get(share_id)
-        post_reactions = reel_engagement[0] if reel_engagement else reactions
-        comments = reel_engagement[1] if reel_engagement else None
-        shares = reel_engagement[2] if reel_engagement else None
+        engagement = SONGS_FACEBOOK_ENGAGEMENT.get(share_id)
+        post_reactions = engagement[0] if engagement else reactions
+        comments = engagement[1] if engagement else None
+        shares = engagement[2] if engagement else None
         next_date = (date.fromisoformat(post_date) + timedelta(days=1)).isoformat()
         change = daily[next_date] - daily[post_date] if post_date in daily and next_date in daily else None
         if change is not None:
@@ -2536,7 +2565,7 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
             "reactions": post_reactions,
             "comments": comments,
             "shares": shares,
-            "engagementTotal": sum(reel_engagement) if reel_engagement else None,
+            "engagementTotal": sum(engagement) if engagement else None,
             "nextSnapshotDate": next_date,
             "nextDayTicketChange": change,
         })
