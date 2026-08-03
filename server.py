@@ -2340,7 +2340,7 @@ def post_show_report(event_url: str) -> dict[str, Any]:
         "performances": final_sessions,
         "performanceHistory": history_by_schedule,
         "finalSnapshotMarkers": final_snapshot_markers,
-        "campaignAnalysis": finding_nemo_campaign_analysis(event_url, history["snapshots"]),
+        "campaignAnalysis": campaign_analysis(event_url, history["snapshots"]),
         "complete": bool(final_sessions) and len(final_sessions) == len(final_rows),
     }
 
@@ -2466,6 +2466,103 @@ def finding_nemo_campaign_analysis(event_url: str, snapshots: list[dict[str, Any
         ),
         "engagementCapturedAt": "2026-07-13",
     }
+
+
+# The supplied links were ordered chronologically by the company.  Facebook's
+# public dialog exposes the timestamp in each saved thumbnail; reels do not
+# consistently expose their counter labels, so those values remain blank rather
+# than being guessed.
+SONGS_OF_THE_STAGE_FACEBOOK_POSTS = [
+    ("2026-06-22", "post", "1BAmwDCYAv", "Launch announcement"),
+    ("2026-06-25", "video", "18CriseU7H", "Performance reel"),
+    ("2026-06-29", "post", "1JB8r1Murx", "Live band rehearsal"),
+    ("2026-07-03", "video", "1DDd1uawJb", "Performance reel"),
+    ("2026-07-06", "post", "1DBULrbYo9", "Rehearsal and dates"),
+    ("2026-07-10", "video", "19NK7fHij2", "Two-week countdown reel"),
+    ("2026-07-12", "post", "1DUePFCJbV", "Sitzprobe preview"),
+    ("2026-07-14", "video", "19EE6VxHMi", "Cast performance reel"),
+    ("2026-07-15", "post", "1AgFWf5ZAX", "Cast rehearsal"),
+    ("2026-07-16", "video", "1DL3weiBWf", "Cast performance reel"),
+    ("2026-07-17", "post", "1LD6Qbx2nE", "Seven-day countdown"),
+    ("2026-07-18", "post", "19JJHamHPz", "Six-day countdown"),
+    ("2026-07-19", "post", "1Q6B8s33dD", "Five-day countdown"),
+    ("2026-07-20", "post", "192o12y81H", "Four-day countdown"),
+    ("2026-07-21", "post", "1GApLkdq7X", "Three-day countdown"),
+    ("2026-07-22", "post", "19RakDiR1u", "Two-day countdown"),
+    ("2026-07-23", "post", "1GsEB3x2uH", "Opening-night urgency"),
+    ("2026-07-24", "post", "1DG4vDFhn3", "Opening-night content"),
+    ("2026-07-25", "post", "1E1jTugG4X", "Weekend performance content"),
+    ("2026-07-25", "post", "1Dr7J47k5E", "Weekend performance content"),
+    ("2026-07-26", "post", "1BfrN2UoBS", "Audience and performance content"),
+    ("2026-07-27", "post", "1BgSRMqqbK", "Mid-run reminder"),
+    ("2026-07-28", "post", "195ZVfpUyB", "Cast and performance content"),
+    ("2026-07-30", "post", "1CtPgb3APW", "Audience review"),
+    ("2026-07-30", "post", "14iuEkmgWqa", "Late-run reminder"),
+    ("2026-07-31", "post", "1DKtcsrtbn", "Final-week urgency"),
+    ("2026-07-31", "post", "1G2YU2DtKE", "Final-week urgency"),
+    ("2026-08-01", "post", "19SKHUYHzL", "Closing-day reminder"),
+    ("2026-08-01", "post", "1G5TktBMP7", "Closing-day performance content"),
+    ("2026-08-01", "post", "18CT9mjjDJ", "Closing-day urgency"),
+    ("2026-08-01", "post", "1BV5PA5a2P", "2-for-1 closing offer"),
+]
+
+
+def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    daily = {str(item.get("local_date")): int(item.get("actual_sold") or 0) for item in snapshots}
+    posts = []
+    post_changes = []
+    for index, (post_date, post_type, share_id, theme) in enumerate(SONGS_OF_THE_STAGE_FACEBOOK_POSTS, start=1):
+        next_date = (date.fromisoformat(post_date) + timedelta(days=1)).isoformat()
+        change = daily[next_date] - daily[post_date] if post_date in daily and next_date in daily else None
+        if change is not None:
+            post_changes.append(change)
+        posts.append({
+            "date": post_date,
+            "type": post_type,
+            "theme": theme,
+            "url": f"https://www.facebook.com/share/{'r' if post_type == 'video' else 'p'}/{share_id}/",
+            "screenshot": f"/assets/facebook-songs-of-the-stage/{index:02d}.png",
+            "reactions": None,
+            "comments": None,
+            "shares": None,
+            "engagementTotal": None,
+            "nextSnapshotDate": next_date,
+            "nextDayTicketChange": change,
+        })
+
+    post_dates = {post["date"] for post in posts}
+    non_post_changes = []
+    for current_date, value in daily.items():
+        previous_date = (date.fromisoformat(current_date) - timedelta(days=1)).isoformat()
+        if previous_date in daily and previous_date not in post_dates:
+            non_post_changes.append(value - daily[previous_date])
+    average = lambda values: round(sum(values) / len(values), 1) if values else None
+    post_average = average(post_changes)
+    non_post_average = average(non_post_changes)
+    uplift = None if post_average is None or non_post_average in {None, 0} else round((post_average - non_post_average) / non_post_average * 100, 1)
+    return {
+        "title": "Songs of the Stage Vol II Facebook activity",
+        "posts": posts,
+        "postNextDayAverage": post_average,
+        "nonPostNextDayAverage": non_post_average,
+        "postDayUpliftPercent": uplift,
+        "compactCards": True,
+        "engagementCapturedAt": "2026-08-03",
+        "writtenAnalysis": (
+            "Early launch and rehearsal material coincided with low, steady daily movement. "
+            "The countdown and opening-week sequence coincided with a sustained acceleration: daily actual-ticket growth rose from 9-26 tickets in the week before opening to 31-67 tickets across the first week of the run. "
+            "The 2-for-1 closing offer was posted on 1 August at 3:26 pm. The closest stored scans show 44 additional actual tickets before the last evening scan, and 80 additional tickets from that morning's scheduled snapshot. "
+            "That is a strong final-day association, but it cannot isolate the offer from normal closing-night urgency and walk-up demand."
+        ),
+    }
+
+
+def campaign_analysis(event_url: str, snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if "salesevent/162924" in event_url:
+        return finding_nemo_campaign_analysis(event_url, snapshots)
+    if "salesevent/157298" in event_url:
+        return songs_of_the_stage_campaign_analysis(snapshots)
+    return None
 
 
 def snapshot_datetime(value: str) -> datetime:
