@@ -1636,9 +1636,14 @@ def final_snapshot_schedule_ids(
     window_minutes: int = 15,
     late_grace_minutes: int = 30,
 ) -> set[int]:
+    now_utc = datetime.now(timezone.utc)
+    window_start = now_utc - timedelta(minutes=late_grace_minutes)
+    window_end = now_utc + timedelta(minutes=window_minutes)
     rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
+        f"&show_datetime=gte.{quote(window_start.isoformat(), safe='')}"
+        f"&show_datetime=lte.{quote(window_end.isoformat(), safe='')}"
         "&select=event_snapshot_id,schedule_id,show_datetime,event_snapshots!inner(source,captured_at)"
         "&event_snapshots.source=eq.final"
         "&order=show_datetime.asc,event_snapshot_id.asc,schedule_id.asc"
@@ -1936,6 +1941,9 @@ def retired_snapshot_candidates(
     refresh_hours: int = 24,
     refresh_interval_minutes: int = 60,
 ) -> list[dict[str, Any]]:
+    refresh_start = now_utc - timedelta(hours=refresh_hours)
+    refresh_start_filter = quote(refresh_start.isoformat(), safe="")
+    now_filter = quote(now_utc.isoformat(), safe="")
     snapshots = supabase_request(
         "event_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
@@ -1950,12 +1958,16 @@ def retired_snapshot_candidates(
     latest_rows = supabase_select_all(
         "performance_snapshots"
         f"?event_snapshot_id=eq.{snapshots[0]['id']}"
+        f"&show_datetime=gte.{refresh_start_filter}"
+        f"&show_datetime=lte.{now_filter}"
         "&select=schedule_id,show_datetime,description"
         "&order=show_datetime.asc,schedule_id.asc"
     )
     completed_rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
+        f"&show_datetime=gte.{refresh_start_filter}"
+        f"&show_datetime=lte.{now_filter}"
         "&select=event_snapshot_id,schedule_id,event_snapshots!inner(source,captured_at)"
         "&event_snapshots.source=eq.retired"
         "&order=schedule_id.asc,event_snapshot_id.desc"
@@ -2001,15 +2013,19 @@ def missing_imminent_ticketsearch_candidates(
     before it starts. Retain its schedule ID long enough to try the
     schedule-level seat-map endpoint during the final-snapshot window.
     """
+    window_start = now_utc - timedelta(minutes=late_grace_minutes)
+    window_end = now_utc + timedelta(minutes=window_minutes)
+    window_start_filter = quote(window_start.isoformat(), safe="")
+    window_end_filter = quote(window_end.isoformat(), safe="")
     rows = supabase_select_all(
         "performance_snapshots"
         f"?tracked_event_id=eq.{tracked_event_id}"
+        f"&show_datetime=gte.{window_start_filter}"
+        f"&show_datetime=lte.{window_end_filter}"
         "&select=schedule_id,show_datetime,description,total_seats,"
         "event_snapshots!inner(source,captured_at)"
         "&order=event_snapshot_id.desc"
     )
-    window_start = now_utc - timedelta(minutes=late_grace_minutes)
-    window_end = now_utc + timedelta(minutes=window_minutes)
     candidates: dict[int, tuple[datetime, dict[str, Any]]] = {}
     for row in rows:
         schedule_id = int(row.get("schedule_id") or 0)
@@ -2026,6 +2042,25 @@ def missing_imminent_ticketsearch_candidates(
         if existing is None or captured_at > existing[0]:
             candidates[schedule_id] = (captured_at, row)
     return [item[1] for item in candidates.values()]
+
+
+def final_snapshot_work_due(
+    tracked_event_id: str,
+    now_utc: datetime,
+    window_minutes: int,
+    refresh_hours: int = 24,
+) -> bool:
+    """Avoid loading an event's history when no finalisation work is possible."""
+    refresh_start = now_utc - timedelta(hours=refresh_hours)
+    rows = supabase_request(
+        "performance_snapshots"
+        f"?tracked_event_id=eq.{tracked_event_id}"
+        f"&show_datetime=gte.{quote(refresh_start.isoformat(), safe='')}"
+        f"&show_datetime=lte.{quote((now_utc + timedelta(minutes=window_minutes)).isoformat(), safe='')}"
+        "&select=schedule_id"
+        "&limit=1"
+    )
+    return bool(rows)
 
 
 def analyse_ticketsearch_schedule_candidates(
@@ -2138,6 +2173,17 @@ def run_final_snapshots(
                     "eventName": event.get("event_name"),
                     "ok": True,
                     "skipped": "event completed",
+                })
+                continue
+
+            if not final_snapshot_work_due(
+                event["id"], now_utc, window_minutes
+            ):
+                results.append({
+                    "eventUrl": event["event_url"],
+                    "eventName": event.get("event_name"),
+                    "ok": True,
+                    "skipped": "no performance in finalisation window",
                 })
                 continue
 
