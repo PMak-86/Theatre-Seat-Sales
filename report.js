@@ -95,7 +95,62 @@ function sessionCard(session, histories) {
 
 function engagementValue(value) { return value == null ? "-" : number.format(value); }
 
+function socialCampaignSection(analysis) {
+  const display = (value) => value == null ? "—" : number.format(value);
+  const correlation = ({ r, days }) => r == null ? "—" : `${r.toFixed(2)} (${days} days)`;
+  const periodRows = analysis.periods.map((period) => `<tr>
+    <th scope="row">${escapeHtml(period.label)}</th>
+    <td>${display(period.postAverage)} (${period.postDays} days)</td>
+    <td>${display(period.otherAverage)} (${period.otherDays} days)</td>
+    <td>${correlation(period.frequency)}</td>
+  </tr>`).join("");
+  const platformRows = analysis.platforms.map((platform) => `<tr>
+    <th scope="row">${escapeHtml(platform.name)}</th><td>${display(platform.posts)}</td>
+    <td>${correlation(platform.views)}</td><td>${correlation(platform.viewsWithoutOpening)}</td>
+    <td>${correlation(platform.reactions)}</td>
+  </tr>`).join("");
+  const postRows = analysis.posts.map((post) => {
+    const when = new Date(post.postedAt || `${post.date}T12:00:00+10:00`);
+    const time = post.postedAt ? `<small>${timeFormat.format(when)}</small>` : "";
+    const views = `${post.viewsApproximate ? "≈" : ""}${display(post.views)}`;
+    return `<tr><td>${dateFormat.format(when)}${time}</td><td>${escapeHtml(post.platform)}</td>
+      <th scope="row"><a href="${escapeHtml(post.url)}" target="_blank" rel="noreferrer">${escapeHtml(post.theme)}</a>${post.archived ? "<small>Archived caption</small>" : ""}</th>
+      <td>${views}</td><td>${display(post.reactions)}</td><td>${display(post.comments)}</td>
+      <td>${display(post.shares)}</td><td>${display(post.saves)}</td><td>${display(post.nextDayTicketChange)}</td></tr>`;
+  }).join("");
+  const captured = dateFormat.format(new Date(`${analysis.engagementCapturedAt}T12:00:00+11:00`));
+  const [overall, leadUp, run] = analysis.periods;
+  const hasComparisons = [overall, leadUp, run].every((period) => period.postDays && period.otherDays);
+  const finding = hasComparisons ? `<div class="campaign-analysis"><h3>What the data suggests</h3>
+    <p>Across the available campaign dates, days with an observed post averaged ${display(overall.postAverage)} net tickets, compared with ${display(overall.otherAverage)} on other days. The gap was ${display(Number((leadUp.postAverage - leadUp.otherAverage).toFixed(1)))} tickets before opening and ${display(Number((run.postAverage - run.otherAverage).toFixed(1)))} during the run.</p>
+  </div>` : "";
+  return `<section class="report-section campaign" aria-labelledby="social-campaign-title">
+    <h2 id="social-campaign-title">${escapeHtml(analysis.title)}</h2>
+    <p class="subtle">${display(analysis.posts.length)} caption matches from the public Gosford Musical Society profiles and a Facebook archive. This is a partial inventory because the public profiles exposed limited history. Counters were captured ${captured}.</p>
+    ${finding}
+    <h3 id="campaign-sales-title">Posting and ticket sales</h3>
+    <p class="subtle">Each Sydney date counts once. Net tickets are the change from that morning’s scheduled snapshot to the following morning’s snapshot. The comparison ends on closing day and skips dates with a missing snapshot. Days without an observed match may still have had campaign posts.</p>
+    <div class="social-table" role="region" aria-labelledby="campaign-sales-title" tabindex="0"><table>
+      <thead><tr><th scope="col">Period</th><th scope="col">Avg. tickets · post found</th><th scope="col">Avg. tickets · no post found</th><th scope="col">Posts per day · Pearson r</th></tr></thead>
+      <tbody>${periodRows}</tbody>
+    </table></div>
+    <h3 id="campaign-engagement-title">Engagement and ticket sales</h3>
+    <p class="subtle">Pearson r compares each platform’s daily totals with net tickets on days when the metric was available for every observed post on that platform. Lifetime counters include engagement after the sales window. Small samples, opening-weekend pricing and cross-posting limit what these associations say about ticket sales driven by each platform.</p>
+    <div class="social-table" role="region" aria-labelledby="campaign-engagement-title" tabindex="0"><table>
+      <thead><tr><th scope="col">Platform</th><th scope="col">Posts found</th><th scope="col">Views · r</th><th scope="col">Views excluding opening day · r</th><th scope="col">Likes / reactions · r</th></tr></thead>
+      <tbody>${platformRows}</tbody>
+    </table></div>
+    <h3 id="campaign-posts-title">Posts and public counters</h3>
+    <p class="subtle">Dates and times are Sydney local. A dash indicates missing or inapplicable data. Approximate view counts reflect platform rounding. Posts on the same date share the same sales figure.</p>
+    <div class="social-table social-table--posts" role="region" aria-labelledby="campaign-posts-title" tabindex="0"><table>
+      <thead><tr><th scope="col">Posted</th><th scope="col">Platform</th><th scope="col">Post</th><th scope="col">Views</th><th scope="col">Likes / reactions</th><th scope="col">Comments</th><th scope="col">Shares</th><th scope="col">Saves</th><th scope="col">Net tickets</th></tr></thead>
+      <tbody>${postRows}</tbody>
+    </table></div>
+  </section>`;
+}
+
 function campaignSection(analysis) {
+  if (analysis?.platforms) return socialCampaignSection(analysis);
   if (!analysis?.posts?.length) return "";
   const postAverage = analysis.postNextDayAverage == null ? "-" : `+${number.format(analysis.postNextDayAverage)}`;
   const nonPostAverage = analysis.nonPostNextDayAverage == null ? "-" : `+${number.format(analysis.nonPostNextDayAverage)}`;
@@ -115,7 +170,7 @@ function campaignSection(analysis) {
 function render(data) {
   const event = data.event || {};
   const summary = data.summary || {};
-  const reportHeader = data.campaignAnalysis?.headerImage || (data.campaignAnalysis
+  const reportHeader = data.campaignAnalysis?.headerImage || (data.campaignAnalysis && !data.campaignAnalysis.platforms
     ? "/assets/report-headers/finding-nemo-campaign-header.png"
     : (event.report_header_url || event.image_url || "/assets/report-headers/default-theatre-report-header.png"));
   const image = reportHeader ? `<img class="hero-image" src="${escapeHtml(reportHeader)}" alt="">` : "";

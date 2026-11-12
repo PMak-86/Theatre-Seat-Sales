@@ -8,6 +8,7 @@ import zlib
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from statistics import StatisticsError, correlation, mean
 from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
@@ -2668,7 +2669,85 @@ def songs_of_the_stage_campaign_analysis(snapshots: list[dict[str, Any]]) -> dic
     }
 
 
+def guys_and_dolls_campaign_analysis(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
+    posts = json.loads((ROOT / "guys-and-dolls-posts.json").read_text(encoding="utf-8"))
+    opening, closing = date(2026, 10, 23), date(2026, 11, 7)
+    daily = {
+        date.fromisoformat(row["local_date"]): row["actual_sold"]
+        for row in snapshots if row.get("local_date") and row.get("actual_sold") is not None
+    }
+    changes = {
+        day: daily[day + timedelta(days=1)] - sold
+        for day, sold in sorted(daily.items())
+        if day <= closing and day + timedelta(days=1) in daily
+    }
+    posts_by_day = {}
+    for post in posts:
+        day = date.fromisoformat(post["date"])
+        posts_by_day.setdefault(day, []).append(post)
+        post["nextDayTicketChange"] = changes.get(day)
+
+    def average(values):
+        return round(mean(values), 1) if values else None
+
+    def association(pairs):
+        coefficient = None
+        if len(pairs) >= 3:
+            try:
+                coefficient = round(correlation(*zip(*pairs)), 2)
+            except StatisticsError:
+                pass
+        return {"r": coefficient, "days": len(pairs)}
+
+    periods = []
+    for label, days in (
+        ("All available campaign days", list(changes)),
+        ("Before opening", [day for day in changes if day < opening]),
+        ("During the run", [day for day in changes if day >= opening]),
+    ):
+        post_days = [changes[day] for day in days if day in posts_by_day]
+        other_days = [changes[day] for day in days if day not in posts_by_day]
+        periods.append({
+            "label": label,
+            "postDays": len(post_days), "postAverage": average(post_days),
+            "otherDays": len(other_days), "otherAverage": average(other_days),
+            "frequency": association([(len(posts_by_day.get(day, [])), changes[day]) for day in days]),
+        })
+
+    platforms = []
+    for platform in ("Facebook", "Instagram", "TikTok"):
+        platform_posts = [post for post in posts if post["platform"] == platform]
+        platform_days = {}
+        for post in platform_posts:
+            day = date.fromisoformat(post["date"])
+            if day in changes:
+                platform_days.setdefault(day, []).append(post)
+        metrics = {}
+        for metric in ("views", "reactions"):
+            pairs_by_day = {
+                day: (sum(post[metric] for post in items), changes[day])
+                for day, items in platform_days.items()
+                if all(post.get(metric) is not None for post in items)
+            }
+            metrics[metric] = association(list(pairs_by_day.values()))
+            if metric == "views":
+                metrics["viewsWithoutOpening"] = association([
+                    pair for day, pair in pairs_by_day.items() if day != opening
+                ])
+        platforms.append({"name": platform, "posts": len(platform_posts), **metrics})
+
+    return {
+        "title": "Guys and Dolls social campaign",
+        "platforms": platforms,
+        "posts": posts,
+        "periods": periods,
+        "engagementCapturedAt": "2026-11-12",
+    }
+
+
 def campaign_analysis(event_url: str, snapshots: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if urlparse(event_url).path.rstrip("/").rsplit("/", 1)[-1] == "167202":
+        return guys_and_dolls_campaign_analysis(snapshots)
     if "salesevent/162924" in event_url:
         return finding_nemo_campaign_analysis(event_url, snapshots)
     if "salesevent/157298" in event_url:
