@@ -1115,7 +1115,7 @@ def analyse_event(value: str) -> dict[str, Any]:
         "imageUrl": first_event_image(event, mask_url),
         "dateRange": date_range(sessions),
         "layoutType": event.get("LayoutTypeDesc"),
-        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "summary": {
             "performances": len(sessions),
             "totalSeats": total_seats,
@@ -1467,7 +1467,7 @@ def analyse_trybooking_event(event_id: int) -> dict[str, Any]:
         if sessions
         else {"start": metadata.get("dateStart"), "end": metadata.get("dateEnd")},
         "layoutType": "TryBookingReservedSeating",
-        "generatedAt": datetime.now().isoformat(timespec="seconds"),
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "summary": {
             "performances": len(sessions),
             "totalSeats": total_seats,
@@ -3039,7 +3039,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(400, {"error": "Provide an eventUrl or eventId query parameter."})
             return
         try:
-            self.send_json(200, event_history(int(event_id_raw) if event_id_raw.isdigit() else None, event_url or None))
+            history = event_history(int(event_id_raw) if event_id_raw.isdigit() else None, event_url or None)
+            # The dashboard uses the corrected daily series, not the full per-seat history.
+            # Compute it through the existing path, then omit unused records from the wire.
+            # Existing API callers and post-show reports keep the full response by default.
+            if params.get("view", [""])[0] == "summary":
+                history = {key: value for key, value in history.items() if key != "performances"}
+            self.send_json(200, history)
         except StorageError as exc:
             self.send_json(404, {"error": str(exc)})
         except Exception as exc:
@@ -3086,6 +3092,12 @@ class Handler(BaseHTTPRequestHandler):
             content_type = "image/jpeg" if "facebook-finding-nemo" in file_path.parts else "image/png"
         elif file_path.suffix in {".jpg", ".jpeg"}:
             content_type = "image/jpeg"
+        elif file_path.suffix == ".svg":
+            content_type = "image/svg+xml"
+        elif file_path.suffix == ".ttf":
+            content_type = "font/ttf"
+        elif file_path.suffix == ".woff2":
+            content_type = "font/woff2"
 
         body = file_path.read_bytes()
         self.send_response(200)

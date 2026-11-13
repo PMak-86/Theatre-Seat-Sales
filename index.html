@@ -1,102 +1,82 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Theatre Seat Sales</title>
-    <link rel="stylesheet" href="/styles.css">
-  </head>
-  <body>
-    <main class="app">
-      <section class="toolbar">
-        <div>
-          <h1>Theatre Seat Sales</h1>
-          <p>Analyse TicketSearch or TryBooking performances by remaining purchase availability.</p>
-        </div>
-        <form id="analyse-form" class="search">
-          <input id="event-input" name="event" value="https://ccclaycock.sales.ticketsearch.com/sales/salesevent/162924" autocomplete="off">
-          <button type="submit">Analyse</button>
-          <button id="save-bookmark" class="bookmark-save-button" type="button" disabled aria-label="Save current show">&#9734;</button>
-          <button id="post-show-report" class="report-button" type="button" hidden>Post-show report</button>
-        </form>
-        <div id="bookmarks" class="bookmarks" hidden>
-          <strong>Saved shows</strong>
-          <div id="bookmark-list" class="bookmark-list"></div>
-        </div>
-      </section>
-
-      <section id="status" class="status">Enter a TicketSearch event URL, TicketSearch event number, or TryBooking event URL.</section>
-
-      <section id="summary" class="summary" hidden>
-        <div class="show-hero">
-          <img id="event-image" alt="">
-        </div>
-        <div class="show-header">
-          <div class="show-copy">
-            <h2 id="event-name"></h2>
-            <div class="show-meta">
-              <span id="event-location"></span>
-              <span id="event-dates"></span>
-            </div>
-          </div>
-          <div class="overall-panel">
-            <div class="overall" id="overall-ring">
-              <div class="ring-inner">
-                <span id="overall-percent">0%</span>
-                <small>sold</small>
-              </div>
-            </div>
-            <div class="sold-today-ticker">
-              <span id="overall-sold-today">-</span>
-              <small>sold today</small>
-            </div>
-          </div>
-        </div>
-        <div class="metrics">
-          <div><span id="metric-performances">0</span><small>Performances</small></div>
-          <div><span id="metric-total">0</span><small>Total seats</small></div>
-          <div><span id="metric-sold">0</span><small>Sold</small></div>
-          <div><span id="metric-unavailable">0</span><small>Unavailable</small></div>
-          <div><span id="metric-left">0</span><small>Left to buy</small></div>
-          <div><span id="metric-revenue">-</span><small>Est. revenue</small></div>
-        </div>
-      </section>
-
-      <section id="history" class="history" hidden>
-        <div class="history-header">
-          <div>
-            <h3>Sales history</h3>
-            <p id="history-status">Snapshots start from the first analysed search.</p>
-          </div>
-          <div class="uplift-grid">
-            <div><span id="uplift-day">-</span><small>Day on day</small></div>
-            <div><span id="uplift-week">-</span><small>Week on week</small></div>
-          </div>
-        </div>
-        <div class="history-chart-wrap">
-          <canvas id="history-chart" width="1000" height="260" aria-label="Effective sold seats over time"></canvas>
-          <div id="history-tooltip" class="history-tooltip" hidden></div>
-        </div>
-      </section>
-
-      <section id="results" class="table-wrap" hidden>
-        <table>
-          <thead>
-            <tr>
-              <th></th>
-              <th>Date</th>
-              <th>Time</th>
-              <th>Sold</th>
-              <th>Unavailable</th>
-              <th>Available</th>
-              <th><span class="stacked-heading">Sold<br>Today</span></th>
-              <th>% sold</th>
-            </tr>
-          </thead>
-          <tbody id="sessions"></tbody>
-        </table>
-      </section>
-    </main>
-    <script src="/app.js"></script>
-  </body>
-</html>
+<html lang="en-AU" data-type="software" data-radius="soft" data-buttons="solid" data-motion>
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Theatre Seat Sales — Your box-office workspace</title>
+<meta name="description" content="Track theatre ticket sales, compare performances and inspect seat availability from TicketSearch and TryBooking.">
+<meta name="page-type" content="software"><meta name="site-kind" content="software"><meta name="theme-color" content="#f8f8f8">
+<meta property="og:title" content="Theatre Seat Sales"><meta property="og:description" content="Your ticket sales, performances and seat maps in one workspace.">
+<meta property="og:type" content="website"><meta property="og:image" content="https://theatre-seat-sales.onrender.com/share.jpg"><meta name="twitter:card" content="summary_large_image">
+<link rel="canonical" href="https://theatre-seat-sales.onrender.com/"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/assets/fonts/funnel-sans-400.ttf" as="font" type="font/ttf" crossorigin>
+<link rel="stylesheet" href="/dashboard-redesign.css"><link rel="stylesheet" href="/seat-maps.css"><link rel="stylesheet" href="/assets/motion/motion.css">
+<script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
+</head>
+<body>
+<!-- Software workspace: dealt mint-pink-accounts palette and Funnel typography.
+Marketing collage and screen-height sections adapted to the user's functional dashboard brief. -->
+<a class="skip-link" href="#main-content">Skip to content</a>
+<svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-ticket" viewBox="0 0 24 24"><path d="M20 8V5H4v3a4 4 0 0 1 0 8v3h16v-3a4 4 0 0 1 0-8Z"/><path d="M15 5v3m0 3v2m0 3v3"/></symbol>
+<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h17M8 14l4-5 4 3 5-7"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 6-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1" transform="translate(1 0) scale(.9 1)"/></symbol>
+<symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+<symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5"/></symbol>
+<symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4Z"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v1"/></symbol>
+<symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></symbol>
+</defs></svg>
+<aside class="sidebar" id="sidebar" aria-label="Workspace navigation">
+<a class="brand" href="/" aria-label="Theatre Seat Sales home"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-ticket"/></svg></span><span>Theatre<br><strong>Seat Sales<span class="brand-period">.</span></strong></span></a>
+<div class="workspace-label">Box-office workspace</div>
+<nav class="workspace-nav" aria-label="Dashboard views">
+<button type="button" class="nav-item active" data-view="overview" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>Overview</button>
+<button type="button" class="nav-item" data-view="performances"><svg class="icon"><use href="#i-ticket"/></svg>Performances<span id="nav-count" class="nav-count" hidden></span></button>
+<button type="button" class="nav-item" data-view="history"><svg class="icon"><use href="#i-chart"/></svg>Sales history</button>
+</nav>
+<div class="sidebar-divider"></div>
+<div id="bookmarks" class="bookmarks"><div class="saved-heading"><strong>Saved shows</strong><span id="bookmark-count">0 / 8</span></div><div id="bookmark-list" class="bookmark-list"></div></div>
+<button id="new-event" class="new-event" type="button"><svg class="icon"><use href="#i-plus"/></svg>Analyse another show</button>
+<div class="sidebar-foot"><span class="workspace-monogram">TS</span><div>Theatre Seat Sales<small>TicketSearch &amp; TryBooking</small></div></div>
+</aside>
+<div class="workspace">
+<header class="topbar"><div class="breadcrumb"><button id="menu-toggle" class="icon-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg class="icon"><use href="#i-menu"/></svg></button><span>Workspace</span><span aria-hidden="true">/</span><strong id="view-label">Overview</strong></div><span class="topbar-note"><span class="status-dot"></span>Box-office insights</span></header>
+<main id="main-content" class="app wrap" tabindex="-1">
+<section class="page-heading hero" data-enter><div class="hero-text"><p class="eyebrow">Theatre Seat Sales</p><h1 id="page-title">Your sales overview</h1><p class="page-intro" id="page-intro">A closer look at every performance.</p></div><button class="btn btn--secondary export-button" id="export-csv" type="button" disabled><svg class="icon"><use href="#i-download"/></svg>Export CSV</button></section>
+<section class="event-search" aria-labelledby="search-title"><form id="analyse-form" class="search"><div class="field"><label id="search-title" for="event-input">Event URL or TicketSearch number</label><div class="input-wrap"><svg class="icon"><use href="#i-link"/></svg><input id="event-input" name="event" value="162924" placeholder="Paste an event link or number" autocomplete="off" required aria-describedby="input-help status"></div></div><button class="btn btn--primary" type="submit"><span class="analyse-label">Analyse event</span><svg class="icon m-arrow"><use href="#i-arrow"/></svg></button></form><p id="input-help" class="input-help">Supports TicketSearch event links and numbers, and TryBooking event links.</p></section>
+<div id="status" class="status" role="status" aria-live="polite">Ready when you are. Choose a show to see its sales.</div>
+<div id="loading-state" class="loading-state" hidden><span class="loading-symbol" aria-hidden="true"></span><div><strong>Checking your performances</strong><p>Gathering ticket sales and seat availability. Larger events can take a little longer.</p></div></div>
+<section id="welcome" class="welcome" aria-labelledby="welcome-title"><div class="welcome-copy"><h2 id="welcome-title">Every seat tells<br>part of the story.</h2><p>Bring your show into view. See ticket sales, follow the sales curve, and find the performances with seats to fill.</p><button id="focus-event" class="text-button" type="button">Choose your event<svg class="icon"><use href="#i-arrow"/></svg></button></div><div class="welcome-guide"><div><span class="step-number">01</span><h3>Load your show</h3><p>Paste a TicketSearch or TryBooking event link above.</p></div><div><span class="step-number">02</span><h3>Read the room</h3><p>Compare ticket sales and open each performance’s seat map.</p></div><div><span class="step-number">03</span><h3>Follow the run</h3><p>Save up to 8 shows and return to their sales history.</p></div></div></section>
+<div id="dashboard" class="dashboard" hidden>
+<section id="summary" class="summary" hidden aria-labelledby="event-name">
+<div class="show-header"><div class="show-copy"><div class="show-kicker"><span id="provider-label">Event analysis</span><span class="kicker-separator" aria-hidden="true">/</span><span id="event-run-label">Performance overview</span></div><h2 id="event-name"></h2><div class="show-meta"><span id="event-location"></span><span id="event-dates"></span></div><p id="analysis-time" class="analysis-time"></p></div><div class="show-actions"><button id="save-bookmark" class="btn btn--secondary bookmark-save-button" type="button" disabled aria-label="Save current show">Save show</button><button id="post-show-report" class="btn btn--secondary report-button" type="button" hidden>Post-show report <span aria-hidden="true">↗</span></button></div><div class="show-art" hidden></div></div>
+<div class="metrics">
+<div class="metric-card metric-main"><small>Tickets sold</small><span id="metric-sold">—</span><div class="metric-note"><span id="overall-sold-today">—</span> sold today</div></div>
+<div class="metric-card"><small>Seats available</small><span id="metric-left">—</span><div class="metric-note">Across <span id="metric-performances">—</span> performances</div></div>
+<div class="metric-card"><small>Estimated revenue</small><span id="metric-revenue">—</span><div class="metric-note">AUD · ticket sales estimate</div></div>
+<div class="metric-card metric-occupancy"><div><small>Sell-through</small><span id="overall-percent">—</span><div class="metric-note">Sales + designated holds</div></div><div class="overall" id="overall-ring" aria-hidden="true"><div class="ring-inner"><svg class="icon"><use href="#i-ticket"/></svg></div></div></div>
+</div>
+<div class="capacity-line"><span><span id="metric-total">—</span> total seats</span><span><span id="metric-unavailable">—</span> unavailable</span><p class="metric-explanation">Sold counts actual ticket sales. Sell-through also includes designated holds.</p></div>
+</section>
+<section id="history" class="history panel" hidden aria-labelledby="history-title">
+<div class="history-header"><div><h2 id="history-title">Sales history</h2><p id="history-status">Snapshots start from the first analysis.</p></div><div class="range-control" aria-label="Sales history period"><button type="button" data-range="7" aria-pressed="false">7 days</button><button type="button" data-range="30" aria-pressed="false">30 days</button><button type="button" data-range="all" class="selected" aria-pressed="true">All history</button></div></div>
+<div class="chart-meta"><span class="chart-legend"><i></i>Tickets sold</span><div class="uplift-grid"><div><span id="uplift-day">—</span><small>day on day</small></div><div><span id="uplift-week">—</span><small>week on week</small></div></div></div>
+<div class="history-chart-wrap"><canvas id="history-chart" width="1000" height="260" role="img" aria-label="Actual ticket sales over time. Exact values are in the snapshot table below."></canvas><div id="history-tooltip" class="history-tooltip" hidden></div></div>
+<div class="history-footer"><details class="history-data"><summary>View snapshot data</summary><table><thead><tr><th scope="col">Snapshot</th><th scope="col">Tickets sold</th></tr></thead><tbody id="history-data-body"></tbody></table></details><span id="history-range-label">All recorded snapshots</span></div>
+</section>
+<section id="results" class="table-wrap panel" hidden aria-labelledby="performances-title">
+<div class="performance-heading"><div><h2 id="performances-title">Performances <span id="performance-count" class="count-badge"></span></h2><p>Select a performance to inspect seats and hold codes.</p></div><button id="expand-all" class="btn btn--secondary" type="button" aria-expanded="false">Expand all</button></div>
+<div class="performance-toolbar"><div class="session-search"><label for="session-search">Find a performance</label><svg class="icon"><use href="#i-search"/></svg><input type="search" id="session-search" placeholder="Find a date or time"></div><div class="select-field"><label for="session-filter">Show</label><select id="session-filter"><option value="all">All performances</option><option value="upcoming">Upcoming</option><option value="final">Final numbers</option></select></div><div class="select-field"><label for="session-sort">Sort by</label><select id="session-sort"><option value="date">Date, earliest first</option><option value="sold">Most tickets sold</option><option value="available">Most seats available</option><option value="sellthrough">Highest sell-through</option></select></div></div>
+<table class="performance-table"><thead><tr><th scope="col"><span class="sr-only">Details</span></th><th scope="col">Performance</th><th scope="col">Time</th><th scope="col">Tickets sold</th><th scope="col">Unavailable</th><th scope="col">Available</th><th scope="col">Sold today</th><th scope="col">Sell-through</th></tr></thead><tbody id="sessions"></tbody></table>
+<p id="no-performances" class="no-performances" hidden>No performances match these filters.</p><div class="table-footer"><span id="results-count"></span><span>All times in Sydney time</span></div>
+</section>
+</div>
+<footer class="workspace-footer"><span>Theatre Seat Sales</span><span>Sales figures reflect the latest completed analysis.</span></footer>
+</main></div>
+<noscript><p class="noscript">Enable JavaScript to analyse events and view ticket sales.</p></noscript>
+<script src="/app.js"></script><script type="module" src="/assets/motion/motion.js"></script>
+</body></html>

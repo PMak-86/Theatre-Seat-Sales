@@ -16,6 +16,15 @@ const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
 const MAX_BOOKMARKS = 8;
 let currentEvent = null;
 let chartPoints = [];
+let currentData = null;
+let historyData = { snapshots: [] };
+let visibleSnapshots = [];
+let activeView = "overview";
+let selectedRange = "all";
+let analysisRequest = 0;
+let analysisController = null;
+let historyController = null;
+let isLoading = false;
 
 const formatNumber = new Intl.NumberFormat("en-AU");
 const formatCurrency = new Intl.NumberFormat("en-AU", {
@@ -53,6 +62,7 @@ const formatSnapshotDateTime = new Intl.DateTimeFormat("en-AU", {
 function setStatus(message, isError = false) {
   statusEl.textContent = message;
   statusEl.classList.toggle("error", isError);
+  input.setAttribute("aria-invalid", String(isError && !currentData));
 }
 
 function percent(value) {
@@ -80,14 +90,20 @@ function setText(id, value) {
 function savedBookmarks() {
   try {
     const parsed = JSON.parse(localStorage.getItem(BOOKMARK_STORAGE_KEY) || "[]");
-    return Array.isArray(parsed) ? parsed.slice(0, MAX_BOOKMARKS) : [];
+    return Array.isArray(parsed) ? parsed.filter(item => item && typeof item.name === "string" && typeof item.url === "string" && item.url.trim()).slice(0, MAX_BOOKMARKS) : [];
   } catch (error) {
     return [];
   }
 }
 
 function saveBookmarks(items) {
-  localStorage.setItem(BOOKMARK_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_BOOKMARKS)));
+  try {
+    localStorage.setItem(BOOKMARK_STORAGE_KEY, JSON.stringify(items.slice(0, MAX_BOOKMARKS)));
+    return true;
+  } catch {
+    setStatus("This browser could not save your show. Allow local storage and try again.", true);
+    return false;
+  }
 }
 
 function bookmarkKey(value) {
@@ -98,10 +114,11 @@ function renderBookmarks() {
   const items = savedBookmarks();
   bookmarksEl.hidden = false;
   bookmarkListEl.innerHTML = "";
+  setText("#bookmark-count", `${items.length} / ${MAX_BOOKMARKS}`);
   updateBookmarkButton();
 
   if (!items.length) {
-    bookmarkListEl.innerHTML = `<p class="empty-bookmarks">Save up to ${MAX_BOOKMARKS} shows after analysing them.</p>`;
+    bookmarkListEl.innerHTML = `<p class="empty-bookmarks">Your shows, one click away.<br>Save a show after analysing it.</p>`;
     return;
   }
 
@@ -110,7 +127,7 @@ function renderBookmarks() {
     wrapper.className = "bookmark-item";
     wrapper.innerHTML = `
       <button class="bookmark-load" type="button" data-index="${index}">${escapeHtml(item.name)}</button>
-      <button class="bookmark-remove" type="button" data-index="${index}" aria-label="Remove ${escapeHtml(item.name)}">x</button>
+      <button class="bookmark-remove" type="button" data-index="${index}" aria-label="Remove ${escapeHtml(item.name)}">×</button>
     `;
     bookmarkListEl.appendChild(wrapper);
   });
@@ -119,7 +136,9 @@ function renderBookmarks() {
 function updateBookmarkButton() {
   const items = savedBookmarks();
   const isSaved = currentEvent && items.some((item) => bookmarkKey(item.url) === bookmarkKey(currentEvent.url));
-  saveBookmarkButton.textContent = isSaved ? "\u2605" : "\u2606";
+  saveBookmarkButton.textContent = isSaved ? "✓ Saved show" : "+ Save show";
+  saveBookmarkButton.setAttribute("aria-label", isSaved ? "Remove current show from saved shows" : "Save current show");
+  saveBookmarkButton.setAttribute("aria-pressed", String(Boolean(isSaved)));
   saveBookmarkButton.classList.toggle("is-saved", Boolean(isSaved));
   saveBookmarkButton.title = isSaved ? "Saved show" : "Save current show";
 }
@@ -137,10 +156,14 @@ function saveCurrentBookmark() {
 
   if (existingIndex >= 0) {
     items.splice(existingIndex, 1);
+    if (!saveBookmarks(items)) return;
+    renderBookmarks();
+    setStatus(`Removed ${currentEvent.name} from saved shows.`);
+    return;
   }
 
   items.unshift(nextItem);
-  saveBookmarks(items);
+  if (!saveBookmarks(items)) return;
   renderBookmarks();
   updateBookmarkButton();
   setStatus(`Saved ${currentEvent.name}`);
@@ -542,29 +565,48 @@ function formatDateRange(range) {
   if (!range || !range.start) return "Dates not supplied";
   const start = new Date(range.start);
   const end = range.end ? new Date(range.end) : start;
-  if (start.toDateString() === end.toDateString()) {
+  if (formatShortDate.format(start) === formatShortDate.format(end)) {
     return formatShortDate.format(start);
   }
   return `${formatShortDate.format(start)} to ${formatShortDate.format(end)}`;
 }
 
 function render(data) {
+  currentData = data;
+  document.querySelector("#dashboard").hidden = false;
+  document.querySelector("#welcome").hidden = true;
+  document.querySelector("#export-csv").disabled = false;
+  setText("#provider-label", data.provider === "trybooking" ? "TryBooking" : "TicketSearch");
+  setText("#nav-count", data.sessions.length);
+  document.querySelector("#nav-count").hidden = false;
+  setText("#performance-count", data.sessions.length);
   const summary = data.summary;
-  const image = document.querySelector("#event-image");
-  image.src = data.imageUrl || "";
-  image.alt = data.eventName || "Event image";
+  const art = document.querySelector(".show-art");
+  art.replaceChildren();
+  art.hidden = !data.imageUrl;
+  if (data.imageUrl) {
+    const image = document.createElement("img");
+    image.id = "event-image";
+    image.alt = data.eventName || "Event artwork";
+    image.onerror = () => { art.hidden = true; };
+    image.src = data.imageUrl;
+    art.appendChild(image);
+  }
   currentEvent = {
     name: data.eventName || `Event ${data.eventId}`,
     url: data.eventUrl || input.value.trim(),
   };
   saveBookmarkButton.disabled = !currentEvent.url;
   const allFinal = data.sessions.length > 0 && data.sessions.every((session) => session.isFinal);
+  setText("#event-run-label", allFinal ? "Completed run" : "Performance overview");
   postShowReportButton.hidden = !allFinal;
   updateBookmarkButton();
 
   setText("#event-name", data.eventName || `Event ${data.eventId}`);
-  setText("#event-location", data.venue || data.location || "Location not supplied");
+  setText("#event-location", data.venue || data.location || "");
   setText("#event-dates", formatDateRange(data.dateRange));
+  const capturedAt = data.snapshot?.capturedAt || data.generatedAt;
+  setText("#analysis-time", capturedAt ? `Analysed ${formatSnapshotDateTime.format(new Date(capturedAt))} · Sydney time` : "Analysis time unavailable");
   setText("#overall-percent", summary.capacityUnknown ? "N/A" : percent(summary.effectiveSoldPercent));
   document.querySelector("#overall-ring").style.setProperty("--sold", `${summary.capacityUnknown ? 0 : Math.min(summary.effectiveSoldPercent, 100)}%`);
   setText("#overall-sold-today", dailyDeltaLabel(summary.salesSinceDailySnapshot));
@@ -583,17 +625,18 @@ function render(data) {
     const row = document.createElement("tr");
     row.className = `session-row${session.isFinal ? " session-final" : ""}`;
     row.dataset.detail = `detail-${index}`;
+    row.dataset.index = index;
     row.innerHTML = `
-      <td><button class="expand-button" type="button" aria-expanded="false" aria-controls="detail-${index}">+</button></td>
+      <td><button class="expand-button" type="button" aria-label="Show details for ${escapeHtml(when ? `${formatDate.format(when)}, ${formatTime.format(when)}` : 'performance')}" aria-expanded="false" aria-controls="detail-${index}">+</button></td>
       <td data-label="Date"><span>${when ? formatDate.format(when) : ""}</span>${finalNumbersBadge(session)}</td>
       <td data-label="Time">${when ? formatTime.format(when) : ""}</td>
-      <td data-label="Sold">${soldCellLabel(session)}</td>
+      <td data-label="Tickets sold">${soldCellLabel(session)}</td>
       <td data-label="Unavailable">${formatNumber.format(session.unavailableSeats)}</td>
       <td data-label="Available">${formatNumber.format(session.availableSeats)}</td>
       <td data-label="Sold today" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
         <span class="delta-value">${dailyDeltaLabel(session.salesSinceDailySnapshot)}</span>
       </td>
-      <td data-label="% sold">
+      <td data-label="Sell-through">
         <div class="bar">
           <span>${percentCellLabel(session)}</span>
           <span class="track"><span class="fill" style="width: ${session.capacityUnknown ? 0 : progressWidth(session.effectiveSoldPercent)}%"></span></span>
@@ -612,13 +655,14 @@ function render(data) {
           <div class="detail-summary">
             <strong>Seat status detail</strong>
             <span>${formatNumber.format(session.ticketsSold)} sold</span>
-            <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sold %</span>
+            <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sell-through</span>
             <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
             <span>${formatNumber.format(session.availableSeats)} available to buy</span>
             ${session.capacityUnknown ? `<span>${escapeHtml(session.statusLabel || "Capacity unknown")}</span>` : ""}
             <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
             <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
             ${session.isFinal ? `<span class="final-note">${finalNumbersBadge(session)}</span>` : ""}
+            ${session.finalSnapshotCapturedAt ? `<span>Snapshot: ${escapeHtml(formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt)))}</span>` : ""}
           </div>
           ${renderSeatMap(session.seatMap)}
           ${renderBreakdown(session.breakdown)}
@@ -630,23 +674,39 @@ function render(data) {
 
   summaryEl.hidden = false;
   resultsEl.hidden = false;
+  document.querySelector("#session-search").value = "";
+  document.querySelector("#session-filter").value = "all";
+  document.querySelector("#session-sort").value = "date";
+  applyPerformanceFilters();
+  setView(activeView, false);
   loadHistory(data);
 }
 
 async function loadHistory(data) {
-  historyEl.hidden = true;
+  historyController?.abort();
+  historyController = new AbortController();
+  const controller = historyController;
+  historyData = { snapshots: [] };
+  visibleSnapshots = [];
+  historyEl.hidden = false;
+  historyStatusEl.textContent = "Loading recorded snapshots…";
+  drawHistoryChart([]);
   try {
     const historyUrl = data.eventUrl
       ? `/api/history?eventUrl=${encodeURIComponent(data.eventUrl)}`
       : `/api/history?eventId=${encodeURIComponent(data.eventId)}`;
-    const response = await fetch(historyUrl);
+    const response = await fetch(`${historyUrl}&view=summary`, { signal: controller.signal });
     const history = await response.json();
     if (!response.ok) {
       throw new Error(history.error || "No history found.");
     }
+    if (currentData !== data || controller.signal.aborted) return;
+    historyData = history;
     renderHistory(history);
     historyEl.hidden = false;
   } catch (error) {
+    if (currentData !== data || controller.signal.aborted) return;
+    document.querySelector("#history-data-body").innerHTML = "";
     historyStatusEl.textContent = "Sales history will appear after snapshots are collected.";
     setText("#uplift-day", "-");
     setText("#uplift-week", "-");
@@ -656,9 +716,14 @@ async function loadHistory(data) {
 }
 
 function renderHistory(history) {
-  const snapshots = history.snapshots || [];
+  const allSnapshots = (history.snapshots || []).slice().sort((a, b) => new Date(a.captured_at) - new Date(b.captured_at));
+  const latestTime = allSnapshots.length ? chartDate(allSnapshots[allSnapshots.length - 1]).getTime() : 0;
+  const cutoff = selectedRange === "all" ? -Infinity : latestTime - (Number(selectedRange) - 1) * 86400000;
+  const snapshots = allSnapshots.filter(snapshot => chartDate(snapshot).getTime() >= cutoff);
+  visibleSnapshots = snapshots;
+  document.querySelector("#history-data-body").innerHTML = snapshots.map((snapshot) => `<tr><td>${escapeHtml(formatSnapshotDateTime.format(new Date(snapshot.captured_at)))}</td><td>${formatNumber.format(Number(snapshot.actual_sold || 0))}</td></tr>`).join("");
   const latest = snapshots[snapshots.length - 1];
-  historyStatusEl.textContent = snapshots.length === 1
+  historyStatusEl.textContent = snapshots.length === 0 ? "Sales history will appear after snapshots are collected." : snapshots.length === 1
     ? "1 daily snapshot collected. Uplift appears after the next scheduled snapshot."
     : `${formatNumber.format(snapshots.length)} daily snapshots collected.`;
   setText("#uplift-day", signedNumber(history.uplift?.day?.actualSoldChange));
@@ -666,12 +731,14 @@ function renderHistory(history) {
   if (latest) {
     historyStatusEl.textContent += ` Latest ticket sales: ${formatNumber.format(latest.actual_sold)}.`;
   }
+  setText("#history-range-label", selectedRange === "all" ? "All recorded snapshots" : `${selectedRange} days to latest snapshot`);
   drawHistoryChart(snapshots);
 }
 
 function chartDate(snapshot) {
   if (snapshot.local_date) {
-    return new Date(`${snapshot.local_date}T12:00:00`);
+    // Plot a local calendar day independently of the viewer's machine timezone.
+    return new Date(`${snapshot.local_date}T00:00:00Z`);
   }
   return new Date(snapshot.captured_at);
 }
@@ -701,101 +768,93 @@ function niceTicks(minValue, maxValue, count = 5) {
 
 function drawHistoryChart(snapshots) {
   const canvas = document.querySelector("#history-chart");
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width < 10 || rect.height < 10) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const width = rect.width;
+  const height = rect.height;
+  canvas.width = Math.round(width * dpr);
+  canvas.height = Math.round(height * dpr);
   const ctx = canvas.getContext("2d");
-  const width = canvas.width;
-  const height = canvas.height;
+  ctx.scale(dpr, dpr);
   chartPoints = [];
   hideHistoryTooltip();
   ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = "#fff";
-  ctx.fillRect(0, 0, width, height);
-
-  const padding = { top: 22, right: 30, bottom: 48, left: 76 };
+  const padding = { top: 24, right: 16, bottom: 34, left: width < 500 ? 42 : 54 };
   const plotWidth = width - padding.left - padding.right;
   const plotHeight = height - padding.top - padding.bottom;
-
+  ctx.font = '11px "Funnel Sans", sans-serif';
+  ctx.fillStyle = "#727d70";
   if (!snapshots.length) {
-    ctx.fillStyle = "#66737b";
-    ctx.font = "18px Segoe UI, Arial";
-    ctx.fillText("No snapshots yet", padding.left + 16, padding.top + 44);
+    ctx.textAlign = "center";
+    ctx.fillText("No snapshots recorded yet", width / 2, height / 2);
     return;
   }
-
-  const values = snapshots.map((item) => Number(item.actual_sold || 0));
-  const ticks = niceTicks(Math.min(...values, 0), Math.max(...values, 1), 5);
-  const minValue = ticks[0];
+  const values = snapshots.map(item => Number(item.actual_sold || 0));
+  const ticks = niceTicks(0, Math.max(...values, 1), 5);
   const maxValue = ticks[ticks.length - 1];
-  const range = Math.max(maxValue - minValue, 1);
-  const pointX = (index) => padding.left + (snapshots.length === 1 ? plotWidth : (index / (snapshots.length - 1)) * plotWidth);
-  const pointY = (value) => padding.top + plotHeight - ((value - minValue) / range) * plotHeight;
-
-  ctx.strokeStyle = "#e8edf1";
-  ctx.lineWidth = 1;
-  ctx.fillStyle = "#66737b";
-  ctx.font = "13px Segoe UI, Arial";
+  const times = snapshots.map(snapshot => chartDate(snapshot).getTime());
+  const firstTime = times[0];
+  const lastTime = times[times.length - 1];
+  const pointX = index => padding.left + (lastTime === firstTime ? plotWidth / 2 : ((times[index] - firstTime) / (lastTime - firstTime)) * plotWidth);
+  const pointY = value => padding.top + plotHeight - (value / Math.max(maxValue, 1)) * plotHeight;
   ctx.textAlign = "right";
-  ticks.forEach((tick) => {
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 4]);
+  ticks.forEach(tick => {
     const y = pointY(tick);
+    ctx.strokeStyle = "#e7ece3";
     ctx.beginPath();
     ctx.moveTo(padding.left, y);
-    ctx.lineTo(padding.left + plotWidth, y);
+    ctx.lineTo(width - padding.right, y);
     ctx.stroke();
-    ctx.fillText(formatNumber.format(tick), padding.left - 10, y + 4);
+    ctx.fillStyle = "#727d70";
+    ctx.fillText(formatNumber.format(tick), padding.left - 12, y + 4);
   });
-
-  const labelCount = Math.min(snapshots.length, width < 700 ? 4 : 6);
-  const xLabelIndices = labelCount <= 1
-    ? [0]
-    : Array.from({ length: labelCount }, (_, index) => Math.round(index * (snapshots.length - 1) / (labelCount - 1)))
-        .filter((value, index, list) => list.indexOf(value) === index);
-
-  ctx.strokeStyle = "#f0f3f6";
-  ctx.fillStyle = "#66737b";
-  ctx.textAlign = "center";
-  xLabelIndices.forEach((index) => {
-    const x = pointX(index);
-    ctx.beginPath();
-    ctx.moveTo(x, padding.top);
-    ctx.lineTo(x, padding.top + plotHeight);
-    ctx.stroke();
-    ctx.fillText(formatShortDate.format(chartDate(snapshots[index])), x, height - 16);
-  });
-
-  ctx.strokeStyle = "#cfd9e1";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(padding.left, padding.top);
-  ctx.lineTo(padding.left, padding.top + plotHeight);
-  ctx.lineTo(padding.left + plotWidth, padding.top + plotHeight);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#071f3d";
-  ctx.lineWidth = 4;
+  ctx.setLineDash([]);
   ctx.beginPath();
   values.forEach((value, index) => {
-    const x = pointX(index);
-    const y = pointY(value);
-    if (index === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
+    if (index === 0) ctx.moveTo(pointX(index), pointY(value));
+    else ctx.lineTo(pointX(index), pointY(value));
   });
-  ctx.stroke();
-
+  ctx.lineTo(pointX(values.length - 1), padding.top + plotHeight);
+  ctx.lineTo(pointX(0), padding.top + plotHeight);
+  ctx.closePath();
+  ctx.fillStyle = "#edf3e8";
+  ctx.fill();
+  ctx.beginPath();
   values.forEach((value, index) => {
-    const x = pointX(index);
-    const y = pointY(value);
-    chartPoints.push({
-      x,
-      y,
-      value,
-      capturedAt: snapshots[index].captured_at,
-    });
-    ctx.fillStyle = "#071f3d";
-    ctx.beginPath();
-    ctx.arc(x, y, 5, 0, Math.PI * 2);
-    ctx.fill();
+    if (index === 0) ctx.moveTo(pointX(index), pointY(value));
+    else ctx.lineTo(pointX(index), pointY(value));
   });
-  ctx.textAlign = "left";
+  ctx.strokeStyle = "#668750";
+  ctx.lineWidth = 2.5;
+  ctx.lineJoin = "round";
+  ctx.stroke();
+  values.forEach((value, index) => {
+    const x = pointX(index), y = pointY(value);
+    chartPoints.push({ x: x * dpr, y: y * dpr, value, capturedAt: snapshots[index].captured_at });
+    if (values.length <= 12 || index === values.length - 1) {
+      ctx.beginPath();
+      ctx.arc(x, y, index === values.length - 1 ? 4 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = "#668750";
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#fff";
+      ctx.stroke();
+    }
+  });
+  const count = Math.min(snapshots.length, width < 500 ? 3 : 6);
+  const indices = count <= 1 ? [0] : [...new Set(Array.from({ length: count }, (_, i) => Math.round(i * (snapshots.length - 1) / (count - 1))))];
+  const dateLabel = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Sydney" });
+  indices.forEach((index, i) => {
+    ctx.textAlign = i === 0 ? "left" : i === indices.length - 1 ? "right" : "center";
+    ctx.fillStyle = "#727d70";
+    ctx.fillText(dateLabel.format(chartDate(snapshots[index])), pointX(index), height - 10);
+  });
+  canvas.setAttribute("aria-label", snapshots.length + " sales snapshots. Latest: " + formatNumber.format(values[values.length - 1]) + " tickets sold. Exact values are in the snapshot table below.");
 }
+
 
 function hideHistoryTooltip() {
   if (historyTooltipEl) {
@@ -821,11 +880,12 @@ function showHistoryTooltip(point, clientX) {
     <span>${formatNumber.format(point.value)} tickets sold</span>
   `;
   historyTooltipEl.hidden = false;
-  historyTooltipEl.style.left = `${pointLeft}px`;
-  historyTooltipEl.style.top = `${pointTop}px`;
-  historyTooltipEl.style.transform = alignRight
-    ? "translate(calc(-100% - 12px), -50%)"
-    : "translate(12px, -50%)";
+  const tooltipWidth = historyTooltipEl.offsetWidth;
+  const tooltipHeight = historyTooltipEl.offsetHeight;
+  const left = alignRight ? pointLeft - tooltipWidth - 12 : pointLeft + 12;
+  historyTooltipEl.style.left = `${Math.max(4, Math.min(left, wrapRect.width - tooltipWidth - 4))}px`;
+  historyTooltipEl.style.top = `${Math.max(4, pointTop - tooltipHeight / 2)}px`;
+  historyTooltipEl.style.transform = "none";
 }
 
 function handleHistoryPointer(event) {
@@ -838,7 +898,7 @@ function handleHistoryPointer(event) {
   const rect = canvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
   const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
-  const hitRadius = event.pointerType === "touch" ? 30 : 18;
+  const hitRadius = (event.pointerType === "touch" ? 30 : 18) * (canvas.width / rect.width);
   const nearest = chartPoints
     .map((point) => ({
       point,
@@ -905,6 +965,7 @@ sessionsEl.addEventListener("click", (event) => {
   detailRow.hidden = isOpen;
   button.textContent = isOpen ? "+" : "-";
   button.setAttribute("aria-expanded", String(!isOpen));
+  syncExpandAll();
 });
 
 bookmarkListEl.addEventListener("click", (event) => {
@@ -924,7 +985,7 @@ bookmarkListEl.addEventListener("click", (event) => {
     const index = Number(removeButton.dataset.index);
     if (!Number.isInteger(index)) return;
     items.splice(index, 1);
-    saveBookmarks(items);
+    if (!saveBookmarks(items)) return;
     renderBookmarks();
     updateBookmarkButton();
   }
@@ -946,33 +1007,227 @@ historyChart.addEventListener("pointerleave", () => {
 
 async function analyse(event) {
   event.preventDefault();
-  currentEvent = null;
+  const value = input.value.trim();
+  if (!value) {
+    setStatus("Enter a TicketSearch event number or a TicketSearch or TryBooking link.", true);
+    input.focus();
+    return;
+  }
+  analysisController?.abort();
+  historyController?.abort();
+  const requestId = ++analysisRequest;
+  analysisController = new AbortController();
+  const controller = analysisController;
+  const timeout = setTimeout(() => controller.abort(), 180000);
+  isLoading = true;
   submitButton.disabled = true;
   saveBookmarkButton.disabled = true;
-  updateBookmarkButton();
-  summaryEl.hidden = true;
-  historyEl.hidden = true;
-  resultsEl.hidden = true;
-  setStatus("Analysing sessions...");
+  document.querySelector("#export-csv").disabled = true;
+  document.querySelector("#loading-state").hidden = false;
+  document.querySelector("#welcome").hidden = true;
+  document.querySelector("#dashboard").hidden = true;
+  document.querySelector("#dashboard").setAttribute("aria-busy", "true");
+  document.querySelector(".analyse-label").textContent = "Analysing…";
+  closeMenu();
+  setStatus("Checking ticket sales and seat availability…");
 
   try {
-    const response = await fetch(`/api/analyse?input=${encodeURIComponent(input.value)}`);
+    const response = await fetch(`/api/analyse?input=${encodeURIComponent(value)}`, { signal: controller.signal });
     const data = await response.json();
     if (!response.ok) {
       throw new Error(data.error || "Analysis failed.");
     }
+    if (requestId !== analysisRequest) return;
+    if (!data.summary || !Array.isArray(data.sessions)) throw new Error("The event returned incomplete sales data. Please try again.");
     render(data);
     const message = data.provider === "trybooking"
-      ? "Analysis complete. TryBooking sold % uses seats not currently available to buy because detailed hold codes are not public."
-      : "Analysis complete. Sold % includes actual sold seats and mapped sold-equivalent hold codes.";
+      ? "Analysis complete. TryBooking sell-through includes seats unavailable to buy; detailed hold codes are not public."
+      : "Analysis complete. Your latest ticket sales and seat availability are ready.";
     setStatus(message);
+    if (data.snapshotWarning) {
+      setStatus(`${message} This analysis could not be saved to history.`, true);
+    }
   } catch (error) {
-    setStatus(error.message, true);
+    if (requestId !== analysisRequest) return;
+    const message = error.name === "AbortError" ? "The event took too long to respond. Please try again." : error.message;
+    setStatus(currentData ? `${message} Your previous analysis is still shown below.` : message, true);
+    document.querySelector("#dashboard").hidden = !currentData;
+    document.querySelector("#welcome").hidden = Boolean(currentData);
+    if (currentData) loadHistory(currentData);
   } finally {
+    clearTimeout(timeout);
+    if (requestId !== analysisRequest) return;
+    isLoading = false;
     submitButton.disabled = false;
     saveBookmarkButton.disabled = !currentEvent?.url;
+    document.querySelector("#export-csv").disabled = !currentData;
+    document.querySelector("#loading-state").hidden = true;
+    document.querySelector("#dashboard").setAttribute("aria-busy", "false");
+    document.querySelector(".analyse-label").textContent = "Analyse event";
+    if (!historyEl.hidden) requestAnimationFrame(() => drawHistoryChart(visibleSnapshots));
   }
 }
 
+function setView(view, animate = true) {
+  if (!["overview", "performances", "history"].includes(view)) return;
+  activeView = view;
+  const titles = { overview: ["Overview", "Your sales overview", "A closer look at every performance."], performances: ["Performances", "Your performances", "Find the seats and sessions that need your attention."], history: ["Sales history", "Your sales history", "Follow ticket sales across the run."] };
+  const [label, title, intro] = titles[view];
+  setText("#view-label", label);
+  setText("#page-title", title);
+  setText("#page-intro", intro);
+  const dashboard = document.querySelector("#dashboard");
+  dashboard.dataset.view = view;
+  document.querySelectorAll("[data-view].nav-item").forEach(button => {
+    const selected = button.dataset.view === view;
+    button.classList.toggle("active", selected);
+    if (selected) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  });
+  if (animate && currentData) {
+    dashboard.classList.remove("view-change");
+    void dashboard.offsetWidth;
+    dashboard.classList.add("view-change");
+  }
+  const menuWasOpen = document.querySelector("#sidebar").classList.contains("open");
+  closeMenu();
+  if (menuWasOpen) document.querySelector("#main-content").focus({ preventScroll: true });
+  if (animate) window.scrollTo({ top: 0, behavior: "instant" });
+  requestAnimationFrame(() => drawHistoryChart(visibleSnapshots));
+}
+
+function filteredSessions() {
+  if (!currentData) return [];
+  const query = document.querySelector("#session-search").value.trim().toLowerCase();
+  const filter = document.querySelector("#session-filter").value;
+  const sort = document.querySelector("#session-sort").value;
+  const sessions = currentData.sessions.map((session, index) => ({ session, index })).filter(({ session }) => {
+    const when = session.dateTime ? new Date(session.dateTime) : null;
+    const label = when ? `${formatDate.format(when)} ${formatTime.format(when)} ${session.dateTime}`.toLowerCase() : "";
+    return (!query || label.includes(query)) && (filter !== "final" || session.isFinal) && (filter !== "upcoming" || (when && when.getTime() > Date.now()));
+  });
+  const numeric = { sold: "ticketsSold", available: "availableSeats", sellthrough: "effectiveSoldPercent" };
+  return sessions.sort((a, b) => sort === "date" ? (new Date(a.session.dateTime || 0) - new Date(b.session.dateTime || 0)) : Number(b.session[numeric[sort]] || 0) - Number(a.session[numeric[sort]] || 0));
+}
+
+function applyPerformanceFilters() {
+  if (!currentData) return;
+  const visible = filteredSessions();
+  const shown = new Set(visible.map(item => item.index));
+  sessionsEl.querySelectorAll(".session-row").forEach(row => {
+    row.hidden = !shown.has(Number(row.dataset.index));
+    const detail = document.querySelector(`#${row.dataset.detail}`);
+    if (row.hidden) {
+      detail.hidden = true;
+      row.querySelector("button").setAttribute("aria-expanded", "false");
+      row.querySelector("button").textContent = "+";
+    }
+  });
+  visible.forEach(({ index }) => {
+    const row = sessionsEl.querySelector(`[data-index="${index}"]`);
+    sessionsEl.append(row, document.querySelector(`#${row.dataset.detail}`));
+  });
+  document.querySelector("#no-performances").hidden = visible.length > 0;
+  setText("#results-count", `${visible.length} of ${currentData.sessions.length} performances`);
+  document.querySelector("#expand-all").disabled = !visible.length;
+  syncExpandAll();
+}
+
+function syncExpandAll() {
+  const rows = [...sessionsEl.querySelectorAll(".session-row")].filter(row => !row.hidden);
+  const allOpen = rows.length > 0 && rows.every(row => row.querySelector("button").getAttribute("aria-expanded") === "true");
+  const button = document.querySelector("#expand-all");
+  button.textContent = allOpen ? "Collapse all" : "Expand all";
+  button.setAttribute("aria-expanded", String(allOpen));
+}
+
+function csvCell(value) {
+  let text = String(value ?? "");
+  if (typeof value === "string" && /^[\s]*[=+@-]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function exportCsv() {
+  if (!currentData || isLoading) return;
+  const rows = [["Event", "Performance (Australia/Sydney)", "Tickets sold", "Capacity", "Unavailable", "Available", "Sold today", "Sell-through (%)", "Estimated revenue (AUD)", "Status"]];
+  filteredSessions().forEach(({ session }) => rows.push([
+    currentEvent.name, session.dateTime ? `${formatDate.format(new Date(session.dateTime))} ${formatTime.format(new Date(session.dateTime))}` : "",
+    session.ticketsSold, session.capacityUnknown ? "Unknown" : session.totalSeats, session.unavailableSeats, session.availableSeats,
+    session.salesSinceDailySnapshot, session.capacityUnknown ? "Unknown" : Number(session.effectiveSoldPercent).toFixed(1), session.revenueEstimate?.amount,
+    session.isFinal ? "Final" : session.isHistoricalSnapshot ? "Last recorded" : "Current"
+  ]));
+  const url = URL.createObjectURL(new Blob(["\ufeff" + rows.map(row => row.map(csvCell).join(",")).join("\r\n")], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `${currentEvent.name.replace(/[^a-z0-9 -]/gi, "").trim() || "theatre-sales"}-performances.csv`;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  setStatus(`Exported ${rows.length - 1} performances to CSV.`);
+}
+
+function closeMenu(returnFocus = false) {
+  const sidebar = document.querySelector("#sidebar");
+  if (!sidebar.classList.contains("open")) return;
+  sidebar.classList.remove("open");
+  document.querySelector("#menu-toggle").setAttribute("aria-expanded", "false");
+  document.querySelector("#menu-toggle").setAttribute("aria-label", "Open navigation");
+  if (returnFocus) document.querySelector("#menu-toggle").focus();
+}
+
+function focusEvent() {
+  closeMenu();
+  window.scrollTo({ top: 0, behavior: "instant" });
+  input.focus();
+  input.select();
+}
+
+document.querySelectorAll(".nav-item").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
+document.querySelectorAll("[data-range]").forEach(button => button.addEventListener("click", () => {
+  selectedRange = button.dataset.range;
+  document.querySelectorAll("[data-range]").forEach(item => {
+    item.classList.toggle("selected", item === button);
+    item.setAttribute("aria-pressed", String(item === button));
+  });
+  renderHistory(historyData);
+}));
+document.querySelector("#session-search").addEventListener("input", applyPerformanceFilters);
+document.querySelector("#session-filter").addEventListener("change", applyPerformanceFilters);
+document.querySelector("#session-sort").addEventListener("change", applyPerformanceFilters);
+document.querySelector("#expand-all").addEventListener("click", () => {
+  const shouldOpen = document.querySelector("#expand-all").getAttribute("aria-expanded") !== "true";
+  sessionsEl.querySelectorAll(".session-row").forEach(row => {
+    if (row.hidden) return;
+    document.querySelector(`#${row.dataset.detail}`).hidden = !shouldOpen;
+    row.querySelector("button").setAttribute("aria-expanded", String(shouldOpen));
+    row.querySelector("button").textContent = shouldOpen ? "−" : "+";
+  });
+  syncExpandAll();
+});
+document.querySelector("#export-csv").addEventListener("click", exportCsv);
+document.querySelector("#new-event").addEventListener("click", focusEvent);
+document.querySelector("#focus-event").addEventListener("click", focusEvent);
+document.querySelector("#menu-toggle").addEventListener("click", () => {
+  const open = document.querySelector("#sidebar").classList.toggle("open");
+  document.querySelector("#menu-toggle").setAttribute("aria-expanded", String(open));
+  document.querySelector("#menu-toggle").setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
+  if (open) document.querySelector(".nav-item.active").focus();
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") closeMenu(true);
+});
+document.addEventListener("click", event => {
+  if (!event.target.closest("#sidebar, #menu-toggle")) closeMenu();
+});
+let resizeFrame;
+new ResizeObserver(() => {
+  cancelAnimationFrame(resizeFrame);
+  resizeFrame = requestAnimationFrame(() => drawHistoryChart(visibleSnapshots));
+}).observe(historyChart.parentElement);
+
 form.addEventListener("submit", analyse);
 renderBookmarks();
+const linkedEvent = new URLSearchParams(location.search).get("event");
+if (linkedEvent) {
+  input.value = linkedEvent;
+  form.requestSubmit();
+}

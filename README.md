@@ -43,3 +43,9 @@ GitHub repository secrets:
 
 - `RENDER_APP_URL`
 - `SNAPSHOT_SECRET`
+
+## Dashboard redesign
+
+Responsive workspace with performance search, filters, sorting, CSV export, saved shows, history ranges and updated post-show reports. Local Funnel fonts and motion assets are included; no frontend build step is required. Existing Render settings and scheduled jobs are unchanged.
+
+Validation: `python -m unittest discover -s tests`, `node --test tests/report.test.cjs`, `node --check app.js`, `node --check report.js`.

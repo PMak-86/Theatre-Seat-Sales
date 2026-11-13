@@ -1,0 +1,408 @@
+.seat-map-panel {
+  margin: 10px 0 16px;
+  padding: 14px 16px 16px;
+  border: 1px solid #dfe6eb;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.seat-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.seat-map-header strong {
+  color: var(--navy);
+  font-size: 15px;
+}
+
+.seat-map-header span {
+  color: #66737b;
+  font-size: 13px;
+}
+
+.seat-map-stage {
+  width: min(320px, 70%);
+  margin: 0 auto 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #edf2f5;
+  color: #43515c;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.seat-map-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--seat-columns), minmax(0, 1fr));
+  gap: 4px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.laycock-seat-map-panel {
+  overflow: hidden;
+}
+
+.laycock-map {
+  display: grid;
+  gap: 6px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 12px;
+  border: 2px solid #cfd5da;
+  background: #fff;
+}
+
+.laycock-back-label {
+  color: #52616b;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.laycock-row {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(18px, 34px) minmax(0, 1fr) 20px;
+  gap: 6px;
+  align-items: center;
+}
+
+.laycock-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.laycock-seat-block {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(5px, 1fr));
+  gap: 3px;
+}
+
+.laycock-aisle {
+  display: block;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #c6ced4 20%, #c6ced4 80%, transparent);
+}
+
+.laycock-stage {
+  width: 88%;
+  margin: 14px auto 0;
+  padding: 18px 10px;
+  border: 1px solid #7f878d;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(22px, 4vw, 36px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.red-tree-seat-map-panel {
+  overflow: hidden;
+}
+
+.red-tree-map {
+  display: grid;
+  gap: 7px;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 14px;
+  background: #fff;
+}
+
+.red-tree-stage {
+  margin: 0 auto 12px;
+  color: #000;
+  text-align: center;
+  font-size: clamp(28px, 5vw, 48px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.red-tree-front-label,
+.red-tree-back-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+}
+
+.red-tree-seating-area {
+  display: grid;
+  grid-template-columns: 20px minmax(42px, 0.74fr) clamp(22px, 5vw, 38px) minmax(72px, 1.15fr) clamp(22px, 5vw, 38px) minmax(52px, 0.88fr) 20px;
+  gap: 7px 8px;
+  align-items: center;
+}
+
+.red-tree-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.red-tree-seat-block {
+  display: grid;
+  gap: 4px;
+}
+
+.red-tree-left-block {
+  grid-template-columns: repeat(5, minmax(7px, 1fr));
+}
+
+.red-tree-centre-block {
+  grid-template-columns: repeat(8, minmax(7px, 1fr));
+}
+
+.red-tree-right-block {
+  grid-template-columns: repeat(6, minmax(7px, 1fr));
+}
+
+.red-tree-long-aisle {
+  display: grid;
+  place-items: center;
+  grid-row: 1 / -1;
+  align-self: stretch;
+  background: #f5a7aa;
+  color: #071f3d;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.art-house-seat-map-panel {
+  overflow: hidden;
+}
+
+.art-house-map {
+  --art-house-dot-size: 9px;
+  display: grid;
+  grid-template-columns: minmax(90px, 0.34fr) minmax(280px, 1fr) minmax(90px, 0.34fr);
+  grid-template-areas:
+    ". label ."
+    "balcony2 stalls balcony1";
+  gap: 10px 16px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 10px;
+  background: #fff;
+}
+
+.art-house-stalls-label {
+  grid-area: label;
+  color: #071f3d;
+  text-align: center;
+  font-size: 18px;
+  text-transform: uppercase;
+}
+
+.art-house-stalls {
+  grid-area: stalls;
+  display: grid;
+  gap: 7px;
+  padding: 10px;
+  border: 3px solid #aeb3b7;
+}
+
+.art-house-stalls-upper,
+.art-house-stalls-lower,
+.art-house-balcony {
+  display: grid;
+  gap: 4px;
+}
+
+.art-house-stalls-gap {
+  height: 18px;
+  border-top: 2px solid #9da4a8;
+  transform: skewX(4deg);
+}
+
+.art-house-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr) 18px;
+  gap: 5px;
+  align-items: center;
+}
+
+.art-house-row-label {
+  color: #071f3d;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.art-house-seat-block {
+  display: grid;
+  grid-template-columns: repeat(var(--art-house-seat-count), var(--art-house-dot-size));
+  gap: 2px;
+  justify-content: center;
+}
+
+.art-house-seat-block .seat-dot,
+.art-house-seat-block .seat-empty {
+  width: var(--art-house-dot-size);
+  min-width: 0;
+}
+
+.art-house-stalls-coordinate {
+  position: relative;
+  min-height: 0;
+  aspect-ratio: var(--art-house-stalls-ratio, 1.08);
+  border: 3px solid #aeb3b7;
+}
+
+.art-house-coordinate-seat {
+  position: absolute;
+  width: clamp(6px, 1.75%, 13px);
+  min-width: 0;
+  transform: translate(-50%, -50%);
+}
+
+.art-house-coordinate-row-label {
+  position: absolute;
+  z-index: 2;
+  color: #071f3d;
+  font-size: 12px;
+  line-height: 1;
+  transform: translateY(-50%);
+}
+
+.art-house-coordinate-row-label-left {
+  left: 2px;
+}
+
+.art-house-coordinate-row-label-right {
+  right: 2px;
+}
+
+.art-house-coordinate-stage {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  bottom: 2.5%;
+  padding: 13px 8px;
+  border: 1px solid #777;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(18px, 3vw, 26px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.art-house-stage {
+  width: 68%;
+  margin: 8px auto -2px;
+  padding: 15px 10px;
+  border: 1px solid #777;
+  background: #d7d7d7;
+  color: #000;
+  text-align: center;
+  font-size: clamp(18px, 3vw, 26px);
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.art-house-balcony {
+  align-self: center;
+  padding: 8px;
+  border: 3px solid #aeb3b7;
+}
+
+.art-house-balcony-one {
+  grid-area: balcony1;
+}
+
+.art-house-balcony-two {
+  grid-area: balcony2;
+}
+
+.art-house-balcony-title {
+  margin-bottom: 5px;
+  color: #071f3d;
+  text-align: center;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.art-house-balcony .art-house-row {
+  grid-template-columns: 14px minmax(0, 1fr);
+}
+
+.art-house-balcony .art-house-row .art-house-row-label:last-child {
+  display: none;
+}
+
+.seat-dot {
+  display: inline-block;
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 7px;
+  border-radius: 50%;
+  background: #d8e0e5;
+  box-shadow: inset 0 0 0 1px rgba(7, 31, 61, 0.14);
+}
+
+.seat-dot.art-house-coordinate-seat {
+  width: clamp(6px, 1.75%, 13px);
+  min-width: 0;
+}
+
+.seat-empty {
+  display: inline-block;
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.seat-available {
+  background: #a8e6b0;
+}
+
+.seat-sold,
+.seat-sold-equivalent {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px #111;
+}
+
+.seat-hold,
+.seat-blocked,
+.seat-special,
+.seat-selected {
+  background: #f4a7a7;
+}
+
+.seat-excluded {
+  background: #111;
+  box-shadow: none;
+}
+
+.seat-map-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.seat-legend-item {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: #52616b;
+  font-size: 12px;
+}
+
+.seat-legend-item .seat-dot {
+  width: 10px;
+  min-width: 10px;
+}
+

@@ -42,21 +42,20 @@ function chart(points, className = "sales-chart", markers = []) {
   const path = points.map((point, index) => `${index ? "L" : "M"}${x(timestamps[index]).toFixed(1)},${y(values[index]).toFixed(1)}`).join(" ");
   const ticks = Array.from({ length: 4 }, (_, index) => min + (max - min) * index / 3);
   const grid = ticks.map((tick) => `<g><line x1="${pad.left}" x2="${width - pad.right}" y1="${y(tick)}" y2="${y(tick)}"/><text x="${pad.left - 8}" y="${y(tick) + 4}">${number.format(Math.round(tick))}</text></g>`).join("");
-  const circles = points.map((point, index) => `<circle cx="${x(timestamps[index])}" cy="${y(values[index])}" r="3.5"><title>${new Date(point.capturedAt || point.captured_at).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(values[index])} sold</title></circle>`).join("");
+  const circles = points.map((point, index) => `<circle cx="${x(timestamps[index])}" cy="${y(values[index])}" r="${points.length > 40 ? 1.8 : 3.5}"><title>${new Date(point.capturedAt || point.captured_at).toLocaleString("en-AU", { timeZone: "Australia/Sydney" })}: ${number.format(values[index])} sold</title></circle>`).join("");
   const markerCircles = validMarkers.map((marker) => {
     const timestamp = new Date(marker.capturedAt).getTime();
     const cumulativeSold = cumulativeValueAt(timestamp);
     return `<circle class="final-marker" cx="${x(timestamp)}" cy="${y(cumulativeSold)}" r="5"><title>Performance final snapshot: ${new Date(marker.capturedAt).toLocaleString("en-AU", { timeZone: "Australia/Sydney" }).replace(",", "")}. Cumulative run sales: ${number.format(Math.round(cumulativeSold))}</title></circle>`;
   }).join("");
-  const labelCount = Math.min(5, points.length);
-  const labelIndexes = labelCount === 1 ? [0] : Array.from({ length: labelCount }, (_, index) => Math.round(index * (points.length - 1) / (labelCount - 1))).filter((index, position, all) => all.indexOf(index) === position);
-  const xLabels = labelIndexes.map((index) => {
-    const pointDate = new Date(points[index].capturedAt || points[index].captured_at);
-    const anchor = index === 0 ? "" : index === labelIndexes[labelIndexes.length - 1] ? " right" : " middle";
-    return `<text class="x-label${anchor}" x="${x(timestamps[index])}" y="${height - 22}">${chartDateFormat.format(pointDate)}</text>`;
+  const labelCount = startTime === endTime ? 1 : Math.min(5, points.length);
+  const labelTimes = Array.from({ length: labelCount }, (_, index) => labelCount === 1 ? startTime : startTime + index * (endTime - startTime) / (labelCount - 1));
+  const xLabels = labelTimes.map((timestamp, index) => {
+    const anchor = index === 0 ? "" : index === labelTimes.length - 1 ? " right" : " middle";
+    return `<text class="x-label${anchor}" x="${x(timestamp)}" y="${height - 22}">${chartDateFormat.format(new Date(timestamp))}</text>`;
   }).join("");
   const legend = validMarkers.length ? `<text class="chart-legend" x="44" y="${height - 4}">Red = performance final snapshot</text>` : "";
-  return `<svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time">${legend}<g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}${markerCircles}${xLabels}</svg>`;
+  return `<div class="report-chart-scroll" tabindex="0" role="region" aria-label="Sales chart; scroll horizontally on small screens"><svg class="${className}" viewBox="0 0 ${width} ${height}" role="img" aria-label="Sales over time">${legend}<g class="grid">${grid}</g><path class="line" d="${path}"/>${circles}${markerCircles}${xLabels}</svg></div>`;
 }
 
 function seatMap(map) {
@@ -176,11 +175,11 @@ function render(data) {
   const image = reportHeader ? `<img class="hero-image" src="${escapeHtml(reportHeader)}" alt="">` : "";
   reportEl.innerHTML = `
     <div class="report-actions no-print"><button id="print-report" type="button">Print / Save PDF</button></div>
-    <section class="cover${data.campaignAnalysis ? " campaign-cover" : ""}">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU")}</p></div></section>
-    <section class="overview"><div class="ring"><b>${percentage(summary.effectiveSoldPercent)}</b><span>sold</span></div><div class="overview-copy"><h2>Run summary</h2><div class="summary-grid"><span><b>${number.format(summary.performances)}</b> Performances</span><span><b>${number.format(summary.totalSeats)}</b> Saleable seats</span><span><b>${number.format(summary.ticketsSold)}</b> Tickets sold</span><span><b>${money.format(summary.revenueEstimate?.amount || 0)}</b> Est. revenue</span></div></div></section>
+    <section class="cover${data.campaignAnalysis ? " campaign-cover" : ""}">${image}<div class="cover-copy"><p class="eyebrow">Post-show analysis</p><h1>${escapeHtml(event.event_name || "Theatre report")}</h1><p>${escapeHtml(event.venue || event.location || "")}</p><p>Final report generated ${new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Sydney" })}</p></div></section>
+    <section class="overview"><div class="ring" style="--sell-through:${Math.max(0, Math.min(100, Number(summary.effectiveSoldPercent) || 0))}%"><b>${summary.capacityUnknown ? "N/A" : percentage(summary.effectiveSoldPercent)}</b><span>sell-through</span></div><div class="overview-copy"><h2>Run summary</h2><div class="summary-grid"><span><b>${number.format(summary.performances)}</b> Performances</span><span><b>${summary.capacityUnknown ? "Unknown" : number.format(summary.totalSeats)}</b> Saleable seats</span><span><b>${number.format(summary.ticketsSold)}</b> Tickets sold</span><span><b>${summary.revenueEstimate?.amount == null ? "—" : money.format(summary.revenueEstimate.amount)}</b> Est. revenue</span></div></div></section>
     <section class="report-section"><h2>Sales across the run</h2><p class="subtle">Actual ticket sales at each daily scheduled snapshot. Red points identify the final snapshot for a performance; completed performances remain included in the run total.</p>${chart(data.dailySnapshots || [], "sales-chart", data.finalSnapshotMarkers || [])}</section>
     ${campaignSection(data.campaignAnalysis)}
-    <section class="report-section"><h2>Performance final results</h2><div class="final-table"><div class="table-head"><span>Date</span><span>Time</span><span>Sold</span><span>Capacity</span><span>Sold %</span><span>Revenue</span></div>${(data.performances || []).map((session) => { const when = new Date(session.dateTime); return `<div class="table-row"><span>${dateFormat.format(when)}</span><span>${timeFormat.format(when)}</span><span>${number.format(session.ticketsSold)}</span><span>${number.format(session.totalSeats)}</span><span>${percentage(session.effectiveSoldPercent)}</span><span>${session.revenueEstimate?.amount == null ? "-" : money.format(session.revenueEstimate.amount)}</span></div>`; }).join("")}</div></section>
+    <section class="report-section"><h2>Performance final results</h2><div class="final-table"><div class="table-head"><span>Date</span><span>Time</span><span>Sold</span><span>Capacity</span><span>Sold %</span><span>Revenue</span></div>${(data.performances || []).map((session) => { const when = new Date(session.dateTime); return `<div class="table-row"><span data-label="Date">${dateFormat.format(when)}</span><span data-label="Time">${timeFormat.format(when)}</span><span data-label="Tickets sold">${number.format(session.ticketsSold)}</span><span data-label="Capacity">${session.capacityUnknown ? "Unknown" : number.format(session.totalSeats)}</span><span data-label="Sell-through">${session.capacityUnknown ? "N/A" : percentage(session.effectiveSoldPercent)}</span><span data-label="Revenue">${session.revenueEstimate?.amount == null ? "—" : money.format(session.revenueEstimate.amount)}</span></div>`; }).join("")}</div></section>
     <section class="report-section performances"><h2>Performance detail</h2>${(data.performances || []).map((session) => sessionCard(session, data.performanceHistory || {})).join("")}</section>
     <footer>Final figures are taken from the stored final pre-show snapshot or retired TicketSearch schedule snapshot. Revenue is an estimate from public ticket price levels and excludes holds.</footer>`;
   document.querySelector("#print-report").addEventListener("click", () => window.print());
