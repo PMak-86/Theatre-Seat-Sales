@@ -2,12 +2,50 @@ name: Daily sales snapshot
 
 on:
   workflow_dispatch:
+  schedule:
+    # Follow up after the primary Supabase run at 18:15 UTC.
+    - cron: '35 18 * * *'
+    - cron: '15 19,21 * * *'
+
+permissions:
+  contents: read
+concurrency:
+  group: daily-sales-snapshot
+  cancel-in-progress: false
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
-      - name: Capture tracked event snapshots
+      - name: Capture missing daily snapshots
+        env:
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          SNAPSHOT_SECRET: ${{ secrets.SNAPSHOT_SECRET }}
         run: |
-          curl --fail --show-error --silent \
-            "${{ secrets.RENDER_APP_URL }}/api/snapshot/daily?secret=${{ secrets.SNAPSHOT_SECRET }}"
+          test -n "$RENDER_APP_URL" && test -n "$SNAPSHOT_SECRET"
+          curl --fail-with-body --show-error --silent --max-time 2400 \
+            -H "X-Snapshot-Secret: $SNAPSHOT_SECRET" \
+            "$RENDER_APP_URL/api/snapshot/daily" > snapshot-result.json
+      - name: Summarize capture results
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          path = Path('snapshot-result.json')
+          try:
+              result = json.loads(path.read_text())
+          except (ValueError, OSError):
+              result = {'ok': False, 'error': 'No valid response received; check the capture step.'}
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as out:
+              out.write('## Daily snapshot check\n\n')
+              out.write('Complete.\n' if result.get('ok') else '**Capture incomplete. Review this run.**\n')
+              for row in result.get('results', []):
+                  state = 'already captured' if row.get('skipped') else ('captured' if row.get('ok') else 'FAILED')
+                  out.write(f"- {row.get('eventName', 'Event')}: {state} ({row.get('attempts', 0)} attempts)\n")
+              if result.get('error'):
+                  out.write(str(result['error']) + '\n')
+          if not result.get('ok'):
+              raise SystemExit(1)
+          PY

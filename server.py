@@ -5,6 +5,8 @@ import os
 import re
 import uuid
 import zlib
+import time
+from threading import Lock
 from datetime import date, datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -1911,28 +1913,59 @@ def tracked_events() -> list[dict[str, Any]]:
     )
 
 
+DAILY_SNAPSHOT_LOCK = Lock()
+
+
 def run_daily_snapshots() -> dict[str, Any]:
-    events = tracked_events()
-    results = []
-    for event in events:
-        try:
-            data = analyse_any_event(event["event_url"])
-            attach_finalized_sessions(data)
-            stored = store_snapshot(data, "daily")
-            results.append({
-                "eventUrl": event["event_url"],
-                "eventName": data.get("eventName"),
-                "ok": True,
-                "snapshot": stored,
-            })
-        except Exception as exc:
-            results.append({
-                "eventUrl": event["event_url"],
-                "eventName": event.get("event_name"),
-                "ok": False,
-                "error": str(exc),
-            })
-    return {"trackedEvents": len(events), "results": results}
+    # Avoid overlapping cron/manual requests within the Render process.
+    if not DAILY_SNAPSHOT_LOCK.acquire(blocking=False):
+        return {"ok": False, "error": "A daily snapshot run is already in progress.", "results": []}
+    try:
+        events = tracked_events()
+        coverage = supabase_request("rpc/theatre_daily_snapshot_coverage", "POST", {}) or []
+        complete = {str(row["tracked_event_id"]) for row in coverage}
+        results = []
+        for event in events:
+            result = {"eventName": event.get("event_name"), "eventUrl": event["event_url"]}
+            if str(event["id"]) in complete:
+                results.append({**result, "ok": True, "skipped": True, "attempts": 0})
+                continue
+            for attempt in range(1, 4):
+                if attempt > 1:
+                    time.sleep(2 ** attempt)
+                attempt_id = str(uuid.uuid4())
+                # Write before capture so an interrupted process leaves a visible running attempt.
+                supabase_request("daily_snapshot_attempts", "POST", [{
+                    "id": attempt_id, "tracked_event_id": event["id"],
+                    "attempt": attempt, "status": "running",
+                }])
+                try:
+                    data = analyse_any_event(event["event_url"])
+                    attach_finalized_sessions(data)
+                    stored = store_snapshot(data, "daily")
+                    if not stored:
+                        raise StorageError("Snapshot storage did not return a saved snapshot.")
+                    outcome = {"status": "succeeded", "snapshot_id": stored["snapshotId"]}
+                    result.update(ok=True, snapshot=stored, attempts=attempt)
+                    result.pop("error", None)
+                except Exception as exc:
+                    # Keep actionable failures without persisting response bodies or credentials.
+                    error = f"{type(exc).__name__}: {exc}"
+                    for secret in (SNAPSHOT_SECRET, SUPABASE_SERVICE_ROLE_KEY):
+                        if secret:
+                            error = error.replace(secret, "[redacted]")
+                    error = error.split("<", 1)[0][:1000]
+                    outcome = {"status": "failed", "error": error}
+                    result.update(ok=False, error=error, attempts=attempt)
+                outcome["finished_at"] = datetime.now(timezone.utc).isoformat()
+                supabase_request(f"daily_snapshot_attempts?id=eq.{attempt_id}", "PATCH", outcome)
+                if result["ok"]:
+                    break
+            results.append(result)
+        failed = sum(not item["ok"] for item in results)
+        return {"ok": failed == 0, "trackedEvents": len(events), "failedEvents": failed, "results": results}
+    finally:
+        DAILY_SNAPSHOT_LOCK.release()
 
 
 def retired_snapshot_candidates(
@@ -3008,7 +3041,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json(403, {"error": "Invalid snapshot secret."})
             return
         try:
-            self.send_json(200, run_daily_snapshots())
+            result = run_daily_snapshots()
+            self.send_json(200 if result["ok"] else 503, result)
         except StorageError as exc:
             self.send_json(500, {"error": str(exc)})
         except Exception as exc:
