@@ -74,3 +74,8 @@ Views, clicks and engagement stay blank when the platform does not show them pub
 4. Run **Campaign engagement snapshots** after logging a public post for an active show, then check its screenshot and public counts in the tab.
 
 For a local worker, install `requirements-campaign.txt` and run `python -m playwright install chromium --only-shell`. Set `CAMPAIGN_CHROMIUM_CHANNEL=chrome` to use an installed Chrome for local verification.
+
+
+## Edit campaign entries
+
+Apply `supabase-campaign-entry-edit.sql` after the campaign-log migration. Each row has Edit and Remove controls. Edit updates the publication date, post type and notes. Remove hides the entry and stops scheduled capture. Undo remove restores it with its existing history. A removed post can be logged again.

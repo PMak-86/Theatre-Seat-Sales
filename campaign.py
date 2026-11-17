@@ -113,14 +113,14 @@ class CampaignStore:
     def load(self, event):
         event_id = event["id"]
         posts = self.select_all(
-            f"campaign_posts?tracked_event_id=eq.{event_id}&select={POST_FIELDS},campaign_captures({CAPTURE_FIELDS})"
+            f"campaign_posts?tracked_event_id=eq.{event_id}&removed_at=is.null&select={POST_FIELDS},campaign_captures({CAPTURE_FIELDS})"
             "&order=published_on.desc,id.asc&campaign_captures.order=captured_at.desc&campaign_captures.limit=1"
         )
         finish = instant(event["date_end"]) + FINAL_PERFORMANCE_RUNTIME if event["date_end"] else None
         return {"openingAt": event["date_start"], "lastPerformanceAt": event["date_end"],
                 "finishAt": finish.isoformat() if finish else None, "posts": posts}
 
-    def add_post(self, event, body):
+    def post_values(self, body):
         platform = body.get("platform")
         url, key = post_url(body.get("url"), platform)
         post_type = body.get("postType")
@@ -132,12 +132,50 @@ class CampaignStore:
             raise CampaignError("Enter a valid publication date.") from exc
         if published_on > self.local_day(datetime.now(timezone.utc)):
             raise CampaignError("The publication date must be today or earlier.")
-        rows = self.request(f"campaign_posts?on_conflict=tracked_event_id,platform,source_key&select={POST_FIELDS}", "POST", {
-            "tracked_event_id": event["id"], "published_on": published_on.isoformat(), "platform": platform,
-            "post_type": post_type, "url": url, "source_key": key, "notes": post_notes(body.get("notes", "")),
-        }, "resolution=ignore-duplicates,return=representation")
+        return {
+            "published_on": published_on.isoformat(), "platform": platform, "post_type": post_type,
+            "url": url, "source_key": key, "notes": post_notes(body.get("notes", "")),
+        }
+
+    def add_post(self, event, body):
+        try:
+            rows = self.request(f"campaign_posts?select={POST_FIELDS}", "POST",
+                                {"tracked_event_id": event["id"], **self.post_values(body)}, "return=representation")
+        except Exception as exc:
+            if "23505" in str(exc):
+                raise CampaignError("That post is already logged for this show.", 409) from exc
+            raise
         if not rows:
             raise CampaignError("That post is already logged for this show.", 409)
+        return rows[0]
+
+    def edit_post(self, event, post_id, body):
+        path = self.post_path(event, post_id)
+        existing = self.request(f"{path}&removed_at=is.null&select={POST_FIELDS}")
+        if not existing:
+            raise CampaignError("This post is not logged for the show.", 404)
+        current = existing[0]
+        values = self.post_values({
+            **body, "platform": current["platform"], "url": current["url"],
+        })
+        changes = {key: values[key] for key in ("published_on", "post_type", "notes")}
+        rows = self.request(f"{path}&removed_at=is.null&select={POST_FIELDS}", "PATCH", changes, "return=representation")
+        if not rows:
+            raise CampaignError("This entry has been removed. Reload the campaign.", 409)
+        return rows[0]
+
+    def remove_post(self, event, post_id, restore=False):
+        path = self.post_path(event, post_id)
+        try:
+            rows = self.request(f"{path}&select=id", "PATCH",
+                                {"removed_at": None if restore else datetime.now(timezone.utc).isoformat()},
+                                "return=representation")
+        except Exception as exc:
+            if restore and "23505" in str(exc):
+                raise CampaignError("This post has been logged again. Remove the duplicate before restoring.", 409) from exc
+            raise
+        if not rows:
+            raise CampaignError("This post is not logged for the show.", 404)
         return rows[0]
 
     def post_path(self, event, post_id):
@@ -149,14 +187,14 @@ class CampaignStore:
 
     def save_notes(self, event, post_id, value):
         path = self.post_path(event, post_id)
-        rows = self.request(f"{path}&select=id,notes", "PATCH", {"notes": post_notes(value)}, "return=representation")
+        rows = self.request(f"{path}&removed_at=is.null&select=id,notes", "PATCH", {"notes": post_notes(value)}, "return=representation")
         if not rows:
             raise CampaignError("This post is not logged for the show.", 404)
         return rows[0]
 
     def post_detail(self, event, post_id):
         path = self.post_path(event, post_id)
-        rows = self.request(f"{path}&select={POST_FIELDS},preview_image")
+        rows = self.request(f"{path}&removed_at=is.null&select={POST_FIELDS},preview_image")
         if not rows:
             raise CampaignError("This post is not logged for the show.", 404)
         captures = self.select_all(f"campaign_captures?post_id=eq.{rows[0]['id']}&select={CAPTURE_FIELDS}&order=captured_at.desc")
@@ -164,7 +202,7 @@ class CampaignStore:
 
     def worker_posts(self, now, post_id=None):
         path = (
-            "campaign_posts?select=id,platform,url,published_on,preview,last_attempt_at,"
+            "campaign_posts?removed_at=is.null&select=id,platform,url,published_on,preview,last_attempt_at,"
             "tracked_events!inner(date_start,date_end),campaign_captures(captured_at)&order=id.asc"
             "&campaign_captures.order=captured_at.desc&campaign_captures.limit=1"
             f"&tracked_events.date_end=gt.{quote((now - FINAL_PERFORMANCE_RUNTIME).isoformat(), safe='')}"
@@ -228,7 +266,7 @@ class CampaignStore:
             if not isinstance(image, str) or len(image) > 800100 or not re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}", image):
                 raise CampaignError("Invalid screenshot.")
             changes.update(preview={"kind": "screenshot", "capturedAt": now.isoformat()}, preview_image=image)
-        self.request(f"campaign_posts?id=eq.{post['id']}", "PATCH", changes, "return=minimal")
+        self.request(f"campaign_posts?id=eq.{post['id']}&removed_at=is.null", "PATCH", changes, "return=minimal")
         self.request("campaign_captures?on_conflict=post_id,capture_day", "POST", {
             "post_id": post["id"], "capture_day": self.local_day(now).isoformat(),
             "captured_at": now.isoformat(), "cadence": cadence, **metrics,

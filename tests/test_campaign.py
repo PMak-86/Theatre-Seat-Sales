@@ -26,7 +26,7 @@ class CampaignTests(unittest.TestCase):
         store = CampaignStore(request, Mock(), sydney_local_day)
         self.assertEqual(store.save_notes({"id": "show"}, post_id, " "), {"id": post_id, "notes": ""})
         request.assert_called_once_with(
-            f"campaign_posts?id=eq.{post_id}&tracked_event_id=eq.show&select=id,notes",
+            f"campaign_posts?id=eq.{post_id}&tracked_event_id=eq.show&removed_at=is.null&select=id,notes",
             "PATCH", {"notes": ""}, "return=representation",
         )
         request.return_value = []
@@ -36,6 +36,34 @@ class CampaignTests(unittest.TestCase):
         for notes in (None, 12, "x" * 1001, "bad\x00note"):
             with self.subTest(notes=notes), self.assertRaises(CampaignError):
                 store.save_notes({"id": "show"}, post_id, notes)
+
+    def test_edit_corrects_date_type_and_notes_without_replacing_history(self):
+        post_id = "10000000-0000-0000-0000-000000000001"
+        request = Mock(side_effect=[
+            [{"platform": "facebook", "url": "https://www.facebook.com/reel/123"}],
+            [{"id": post_id, "published_on": "2026-01-02"}],
+        ])
+        store = CampaignStore(request, Mock(), sydney_local_day)
+        edited = store.edit_post({"id": "show"}, post_id, {
+            "publishedOn": "2026-01-02", "postType": "video", "notes": "Ticket offer",
+        })
+        self.assertEqual(edited["published_on"], "2026-01-02")
+        call = request.call_args
+        self.assertIn("tracked_event_id=eq.show&removed_at=is.null", call.args[0])
+        self.assertEqual(call.args[2], {"published_on": "2026-01-02", "post_type": "video", "notes": "Ticket offer"})
+        self.assertNotIn("preview", call.args[2])
+
+    def test_remove_is_reversible_and_stops_worker_selection(self):
+        post_id = "10000000-0000-0000-0000-000000000001"
+        request = Mock(return_value=[{"id": post_id}])
+        select = Mock(return_value=[])
+        store = CampaignStore(request, select, sydney_local_day)
+        store.remove_post({"id": "show"}, post_id)
+        self.assertIsNotNone(request.call_args.args[2]["removed_at"])
+        store.remove_post({"id": "show"}, post_id, restore=True)
+        self.assertIsNone(request.call_args.args[2]["removed_at"])
+        store.worker_queue()
+        self.assertIn("removed_at=is.null", select.call_args.args[0])
 
     def test_deduplicates_instagram_account_and_tracking_variants(self):
         a = post_url("https://www.instagram.com/gosfordmusicalsociety/reel/Db4dXtzoPQe/?igsh=tracking", "instagram")

@@ -113,10 +113,28 @@ Marketing collage and screen-height sections adapted to the user's functional da
     <p id="campaign-empty" class="campaign-empty">No posts logged for this show yet.</p>
     <div id="campaign-table-wrap" class="campaign-table-wrap" tabindex="0" role="region" aria-label="Logged posts and latest metrics" hidden>
       <table class="campaign-table">
-        <thead><tr><th scope="col">Post</th><th scope="col">Date posted</th><th scope="col">Views</th><th scope="col">Clicks</th><th scope="col">Engagements</th><th scope="col">Last check</th></tr></thead>
+        <thead><tr><th scope="col">Post</th><th scope="col">Date posted</th><th scope="col">Views</th><th scope="col">Clicks</th><th scope="col">Engagements</th><th scope="col">Last check</th><th scope="col">Actions</th></tr></thead>
         <tbody id="campaign-posts"></tbody>
       </table>
     </div>
+    <div id="campaign-removed" class="campaign-removed" hidden>
+      <span role="status">Entry removed from this campaign.</span>
+      <button id="campaign-undo" type="button" class="text-button">Undo remove</button>
+    </div>
+    <section id="campaign-editor" class="campaign-editor" aria-labelledby="campaign-editor-title" hidden>
+      <h3 id="campaign-editor-title">Edit campaign entry</h3>
+      <p id="campaign-edit-post" class="campaign-help"></p>
+      <form id="campaign-edit-form" class="campaign-form">
+        <label>Date posted<input name="publishedOn" type="date" required></label>
+        <label>Post type<select name="postType" required></select></label>
+        <label class="campaign-edit-notes">Notes (optional)<textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+        <div class="campaign-edit-actions">
+          <button class="btn btn--primary" type="submit">Save changes</button>
+          <button id="campaign-edit-cancel" class="btn btn--secondary" type="button">Cancel</button>
+        </div>
+        <p id="campaign-edit-status" class="campaign-help" role="status" hidden></p>
+      </form>
+    </section>
     <section id="campaign-report" class="campaign-report" aria-labelledby="campaign-report-title" hidden>
       <header><h3 id="campaign-report-title">Post snapshot history</h3><a id="campaign-original" target="_blank" rel="noopener noreferrer">Open original post</a></header>
       <form id="campaign-notes-form" class="campaign-form campaign-notes-form" hidden>

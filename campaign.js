@@ -18,6 +18,13 @@
   let generation = 0;
   let detailController;
   let campaignFinish;
+  const editForm = $("#campaign-edit-form");
+  const editor = $("#campaign-editor");
+  const editStatus = $("#campaign-edit-status");
+  let editedPost = null;
+  let editTrigger = null;
+  let removedPost = null;
+  editForm.elements.postType.replaceChildren(...[...postForm.elements.postType.options].map(option => option.cloneNode(true)));
 
   function setStatus(message = "", error = false) {
     status.textContent = message;
@@ -52,6 +59,10 @@
     eventUrl = event.detail.url;
     campaignFinish = null;
     ++generation;
+    editor.hidden = true;
+    editedPost = null;
+    removedPost = null;
+    $("#campaign-removed").hidden = true;
     detailController?.abort();
     $("#campaign-title").textContent = `Campaign log · ${event.detail.name}`;
     $("#campaign-content").hidden = true;
@@ -149,13 +160,28 @@
       postCell.append(button, link, notes);
       const last = capture.captured_at ? dateTime.format(new Date(capture.captured_at))
         : campaignFinish && campaignFinish > new Date() ? "Pending" : "No check recorded";
-      return rowWith([postCell, datePosted(post.published_on), metric(capture.views), metric(capture.clicks), metric(capture.engagements), last]);
+      const actions = document.createElement("div");
+      actions.className = "campaign-entry-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "text-button";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => editPost(post, edit));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text-button";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => removePost(post, remove));
+      actions.append(edit, remove);
+      return rowWith([postCell, datePosted(post.published_on), metric(capture.views), metric(capture.clicks), metric(capture.engagements), last, actions]);
     }));
   }
 
   async function load(successMessage = "") {
     const operation = ++generation;
     $("#campaign-report").hidden = true;
+    editor.hidden = true;
+    editedPost = null;
     detailController?.abort();
     setStatus("Loading campaign…");
     try {
@@ -205,7 +231,7 @@
     detailController?.abort();
     const controller = new AbortController();
     detailController = controller;
-    for (const choice of $("#campaign-posts").querySelectorAll("button")) {
+    for (const choice of $("#campaign-posts").querySelectorAll("[aria-pressed]")) {
       choice.setAttribute("aria-pressed", String(choice === button));
     }
     const report = $("#campaign-report");
@@ -243,6 +269,81 @@
       if (!controller.signal.aborted) message.textContent = error.message;
     }
   }
+
+  function editPost(post, trigger) {
+    detailController?.abort();
+    $("#campaign-report").hidden = true;
+    editedPost = post.id;
+    editTrigger = trigger;
+    $("#campaign-edit-post").textContent = `${postName(post)} · ${post.url}`;
+    editForm.elements.publishedOn.value = post.published_on;
+    editForm.elements.publishedOn.max = calendar.format(new Date());
+    editForm.elements.postType.value = post.post_type;
+    editForm.elements.notes.value = post.notes || "";
+    editStatus.hidden = true;
+    editor.hidden = false;
+    editForm.elements.publishedOn.focus();
+  }
+
+  $("#campaign-edit-cancel").addEventListener("click", () => {
+    editor.hidden = true;
+    editedPost = null;
+    editTrigger?.focus();
+  });
+
+  editForm.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (!editedPost) return;
+    const operation = generation;
+    const submit = editForm.querySelector("[type=submit]");
+    submit.disabled = true;
+    editStatus.hidden = false;
+    editStatus.textContent = "Saving changes…";
+    try {
+      await request({ body: { action: "edit", postId: editedPost, ...Object.fromEntries(new FormData(editForm)) } });
+      if (operation !== generation) return;
+      await load("Entry updated.");
+    } catch (error) {
+      if (operation === generation) editStatus.textContent = error.message;
+    } finally {
+      submit.disabled = false;
+    }
+  });
+
+  async function removePost(post, trigger) {
+    const operation = generation;
+    trigger.disabled = true;
+    try {
+      await request({ body: { action: "remove", postId: post.id } });
+      if (operation !== generation) return;
+      removedPost = post.id;
+      await load();
+      $("#campaign-removed").hidden = false;
+      $("#campaign-undo").focus();
+    } catch (error) {
+      if (operation === generation) setStatus(error.message, true);
+    } finally {
+      trigger.disabled = false;
+    }
+  }
+
+  $("#campaign-undo").addEventListener("click", async event => {
+    if (!removedPost) return;
+    const operation = generation;
+    const trigger = event.currentTarget;
+    trigger.disabled = true;
+    try {
+      await request({ body: { action: "restore", postId: removedPost } });
+      if (operation !== generation) return;
+      removedPost = null;
+      $("#campaign-removed").hidden = true;
+      await load("Entry restored.");
+    } catch (error) {
+      if (operation === generation) setStatus(error.message, true);
+    } finally {
+      trigger.disabled = false;
+    }
+  });
 
   function enableNotes(post, button, signal) {
     const field = notesForm.elements.notes;
