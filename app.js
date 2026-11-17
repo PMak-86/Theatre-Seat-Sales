@@ -608,6 +608,7 @@ function render(data) {
     name: data.eventName || `Event ${data.eventId}`,
     url: data.eventUrl || input.value.trim(),
   };
+  document.dispatchEvent(new CustomEvent("show-analysed", { detail: currentEvent }));
   saveBookmarkButton.disabled = !currentEvent.url;
   const allFinal = data.sessions.length > 0 && data.sessions.every((session) => session.isFinal);
   setText("#event-run-label", allFinal ? "Completed run" : "Performance overview");

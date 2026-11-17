@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
+from hmac import compare_digest
 import os
 import re
 import uuid
@@ -17,11 +19,15 @@ from urllib.parse import parse_qs, quote, unquote, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 
+from campaign import CampaignError, CampaignStore
+
+
 ROOT = Path(__file__).parent
 API_BASE = "https://api.ticketsearch.com"
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SNAPSHOT_SECRET = os.environ.get("SNAPSHOT_SECRET", "")
+CAMPAIGN_ACCESS_KEY = os.environ.get("CAMPAIGN_ACCESS_KEY", "")
 SOLD_PERCENT_HOLD_CODES = {"C", "TT", "P", "T", "COMP", "H"}
 SOLD_PERCENT_HOLD_LABELS = {
     "closed seats",
@@ -2828,9 +2834,13 @@ def snapshot_local_date(snapshot: dict[str, Any]) -> str:
     return sydney_local_date(captured)
 
 
-def sydney_local_date(moment_utc: datetime) -> str:
+def sydney_local_day(moment_utc: datetime) -> date:
     moment_utc = moment_utc.astimezone(timezone.utc)
-    return (moment_utc + timedelta(hours=sydney_offset_hours(moment_utc))).date().isoformat()
+    return (moment_utc + timedelta(hours=sydney_offset_hours(moment_utc))).date()
+
+
+def sydney_local_date(moment_utc: datetime) -> str:
+    return sydney_local_day(moment_utc).isoformat()
 
 
 def daily_snapshot_series(snapshots: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -2994,6 +3004,9 @@ def uplift_metrics(snapshots: list[dict[str, Any]]) -> dict[str, Any]:
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
+        if parsed.path == "/api/campaign":
+            self.handle_campaign("GET")
+            return
         if parsed.path == "/api/analyse":
             self.handle_analyse(parsed)
             return
@@ -3013,6 +3026,88 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_tracked_events()
             return
         self.serve_static(parsed.path)
+
+    def do_POST(self) -> None:
+        path = urlparse(self.path).path
+        if path == "/api/campaign":
+            self.handle_campaign("POST")
+        elif path == "/api/snapshot/campaigns":
+            self.handle_campaign_snapshots()
+        else:
+            self.send_error(404)
+
+    def handle_campaign(self, method: str) -> None:
+        store = CampaignStore(supabase_request, supabase_select_all, sydney_local_day)
+        try:
+            auth = self.headers.get("Authorization", "")
+            if not auth.startswith("Bearer "):
+                raise CampaignError("Enter the campaign access key.", 401)
+            if CAMPAIGN_ACCESS_KEY:
+                digest = sha256(CAMPAIGN_ACCESS_KEY.encode()).hexdigest()
+            else:
+                keys = supabase_request("campaign_access?id=eq.true&select=key_digest")
+                if not keys:
+                    raise CampaignError("Campaign logging has not been configured.", 503)
+                digest = keys[0]["key_digest"]
+            if not compare_digest(sha256(auth[7:].encode()).hexdigest(), digest):
+                raise CampaignError("Enter the campaign access key.", 401)
+            if method == "GET":
+                params = parse_qs(urlparse(self.path).query)
+                event = store.event(params.get("eventUrl", [""])[0])
+                post_id = params.get("postId", [""])[0]
+                result = store.post_detail(event, post_id) if post_id else store.load(event)
+                self.send_json(200, result, private=True)
+                return
+            body = self.campaign_json(8192)
+            event = store.event(body.get("eventUrl"))
+            if body.get("action") == "post":
+                post = store.add_post(event, body)
+                self.send_json(201, {"post": post}, private=True)
+            elif body.get("action") == "notes":
+                post = store.save_notes(event, body.get("postId"), body.get("notes"))
+                self.send_json(200, {"post": post}, private=True)
+            else:
+                raise CampaignError("Choose a campaign action.")
+        except CampaignError as exc:
+            self.send_json(exc.status, {"error": str(exc)}, private=True)
+        except StorageError:
+            self.send_json(503, {"error": "Campaign storage is unavailable."}, private=True)
+
+    def campaign_json(self, limit: int) -> dict[str, Any]:
+        if self.headers.get_content_type() != "application/json":
+            raise CampaignError("Send a JSON request.", 415)
+        raw_length = self.headers.get("Content-Length", "")
+        if not raw_length.isdecimal() or not 0 < int(raw_length) <= limit:
+            raise CampaignError("The request is too large or missing a body.", 413)
+        try:
+            body = json.loads(self.rfile.read(int(raw_length)))
+        except (ValueError, UnicodeError) as exc:
+            raise CampaignError("Send a valid JSON object.") from exc
+        if not isinstance(body, dict):
+            raise CampaignError("Send a valid JSON object.")
+        return body
+
+    def handle_campaign_snapshots(self) -> None:
+        if not SNAPSHOT_SECRET or not compare_digest(self.headers.get("X-Snapshot-Secret", "").encode(), SNAPSHOT_SECRET.encode()):
+            self.send_json(403, {"error": "Invalid snapshot secret."}, private=True)
+            return
+        try:
+            body = self.campaign_json(820000)
+            store = CampaignStore(supabase_request, supabase_select_all, sydney_local_day)
+            action = body.get("action")
+            if action == "queue":
+                result = {"postIds": store.worker_queue()}
+            elif action == "claim":
+                result = {"post": store.claim_capture(body.get("postId"))}
+            elif action == "record":
+                result = {"recorded": store.record_capture(body)}
+            else:
+                raise CampaignError("Choose a campaign worker action.")
+            self.send_json(200, result, private=True)
+        except CampaignError as exc:
+            self.send_json(exc.status, {"error": str(exc)}, private=True)
+        except StorageError:
+            self.send_json(503, {"error": "Campaign storage is unavailable."}, private=True)
 
     def handle_analyse(self, parsed: Any) -> None:
         value = parse_qs(parsed.query).get("input", [""])[0]
@@ -3144,10 +3239,12 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_json(self, status: int, payload: dict[str, Any]) -> None:
+    def send_json(self, status: int, payload: dict[str, Any], *, private: bool = False) -> None:
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        if private:
+            self.send_header("Cache-Control", "no-store")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)

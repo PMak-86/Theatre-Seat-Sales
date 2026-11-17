@@ -9,7 +9,7 @@
 <meta property="og:type" content="website"><meta property="og:image" content="https://theatre-seat-sales.onrender.com/share.jpg"><meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://theatre-seat-sales.onrender.com/"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="preload" href="/assets/fonts/funnel-sans-400.ttf" as="font" type="font/ttf" crossorigin>
-<link rel="stylesheet" href="/dashboard-redesign.css"><link rel="stylesheet" href="/seat-maps.css"><link rel="stylesheet" href="/assets/motion/motion.css">
+<link rel="stylesheet" href="/dashboard-redesign.css"><link rel="stylesheet" href="/campaign.css"><link rel="stylesheet" href="/seat-maps.css"><link rel="stylesheet" href="/assets/motion/motion.css">
 <script>document.documentElement.classList.add('m-enter');setTimeout(()=>document.documentElement.classList.add('m-enter-done'),700)</script>
 </head>
 <body>
@@ -44,6 +44,11 @@ Marketing collage and screen-height sections adapted to the user's functional da
 <div id="loading-state" class="loading-state" hidden><span class="loading-symbol" aria-hidden="true"></span><div><strong>Checking your performances</strong><p>Gathering ticket sales and seat availability. Larger events can take a little longer.</p></div></div>
 <section id="welcome" class="welcome" aria-labelledby="welcome-title"><div class="welcome-copy"><h2 id="welcome-title">Every seat tells<br>part of the story.</h2><p>Bring your show into view. See ticket sales, follow the sales curve, and find the performances with seats to fill.</p><button id="focus-event" class="text-button" type="button">Choose your event<svg class="icon"><use href="#i-arrow"/></svg></button></div><div class="welcome-guide"><div><span class="step-number">01</span><h3>Load your show</h3><p>Paste a TicketSearch or TryBooking event link above.</p></div><div><span class="step-number">02</span><h3>Read the room</h3><p>Compare ticket sales and open each performance’s seat map.</p></div><div><span class="step-number">03</span><h3>Follow the run</h3><p>Save up to 8 shows and return to their sales history.</p></div></div></section>
 <div id="dashboard" class="dashboard" hidden>
+<div class="show-tabs" role="tablist" aria-label="Show workspace">
+  <button id="sales-tab" type="button" role="tab" aria-selected="true" aria-controls="sales-pane">Sales overview</button>
+  <button id="campaign-tab" type="button" role="tab" aria-selected="false" aria-controls="campaign-pane" tabindex="-1">Campaign</button>
+</div>
+<div id="sales-pane" role="tabpanel" aria-labelledby="sales-tab" tabindex="0">
 <section id="summary" class="summary" hidden aria-labelledby="event-name">
 <div class="show-header"><div class="show-copy"><div class="show-kicker"><span id="provider-label">Event analysis</span><span class="kicker-separator" aria-hidden="true">/</span><span id="event-run-label">Performance overview</span></div><h2 id="event-name"></h2><div class="show-meta"><span id="event-location"></span><span id="event-dates"></span></div><p id="analysis-time" class="analysis-time"></p></div><div class="show-actions"><button id="save-bookmark" class="btn btn--secondary bookmark-save-button" type="button" disabled aria-label="Save current show">Save show</button><button id="post-show-report" class="btn btn--secondary report-button" type="button" hidden>Post-show report <span aria-hidden="true">↗</span></button></div><div class="show-art" hidden></div></div>
 <div class="metrics">
@@ -85,8 +90,54 @@ Marketing collage and screen-height sections adapted to the user's functional da
 <p id="no-performances" class="no-performances" hidden>No performances match these filters.</p><div class="table-footer"><span id="results-count"></span><span>All times in Sydney time</span></div>
 </section>
 </div>
+<section id="campaign-pane" class="campaign-pane panel" role="tabpanel" aria-labelledby="campaign-tab" tabindex="0" hidden>
+  <header class="campaign-heading"><h2 id="campaign-title">Campaign log</h2></header>
+  <p id="campaign-status" role="status" class="campaign-status" hidden></p>
+  <form id="campaign-unlock" class="campaign-form campaign-unlock">
+    <label>Campaign access key<input name="accessKey" type="password" autocomplete="off" required></label>
+    <button class="btn btn--primary" type="submit">Open campaign</button>
+  </form>
+  <div id="campaign-content" hidden>
+    <section class="campaign-schedule" aria-labelledby="campaign-schedule-title">
+      <div><h3 id="campaign-schedule-title">Capture schedule</h3><p id="campaign-schedule-summary"></p></div>
+      <p class="campaign-help">Weekly until seven days before opening, then daily until three hours after the final performance starts.</p>
+    </section>
+    <form id="campaign-post-form" class="campaign-form campaign-post-form">
+      <label>Date posted<input name="publishedOn" type="date" required></label>
+      <label>Platform<select name="platform" required><option value="facebook">Facebook</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option></select></label>
+      <label>Post type<select name="postType" required><option value="photo">Photo</option><option value="video">Video</option><option value="reel">Reel</option><option value="carousel">Carousel</option><option value="story">Story</option><option value="link">Link</option><option value="text">Text</option><option value="other">Other</option></select></label>
+      <label class="campaign-url">Post URL<input name="url" type="url" placeholder="https://…" maxlength="2048" required></label>
+      <label class="campaign-post-notes">Notes (optional)<textarea name="notes" rows="2" maxlength="1000" placeholder="e.g. Ticket offer or behind-the-scenes rehearsal"></textarea></label>
+      <button class="btn btn--primary" type="submit">Log post</button>
+    </form>
+    <p id="campaign-empty" class="campaign-empty">No posts logged for this show yet.</p>
+    <div id="campaign-table-wrap" class="campaign-table-wrap" tabindex="0" role="region" aria-label="Logged posts and latest metrics" hidden>
+      <table class="campaign-table">
+        <thead><tr><th scope="col">Post</th><th scope="col">Date posted</th><th scope="col">Views</th><th scope="col">Clicks</th><th scope="col">Engagements</th><th scope="col">Last check</th></tr></thead>
+        <tbody id="campaign-posts"></tbody>
+      </table>
+    </div>
+    <section id="campaign-report" class="campaign-report" aria-labelledby="campaign-report-title" hidden>
+      <header><h3 id="campaign-report-title">Post snapshot history</h3><a id="campaign-original" target="_blank" rel="noopener noreferrer">Open original post</a></header>
+      <form id="campaign-notes-form" class="campaign-form campaign-notes-form" hidden>
+        <label>Post notes<textarea name="notes" rows="2" maxlength="1000"></textarea></label>
+        <button class="btn btn--secondary" type="submit">Save notes</button>
+        <p id="campaign-notes-status" class="campaign-help" role="status" hidden></p>
+      </form>
+      <div id="campaign-preview" class="campaign-preview"></div>
+      <p id="campaign-report-status" class="campaign-help"></p>
+      <div id="campaign-report-table" class="campaign-table-wrap" tabindex="0" role="region" aria-label="Engagement snapshot history" hidden>
+        <table class="campaign-table">
+          <thead><tr><th scope="col">Captured at</th><th scope="col">Cadence</th><th scope="col">Views</th><th scope="col">Clicks</th><th scope="col">Engagements</th><th scope="col">Reactions / likes</th><th scope="col">Comments</th><th scope="col">Shares</th></tr></thead>
+          <tbody id="campaign-captures"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</section>
+</div>
 <footer class="workspace-footer"><span>Theatre Seat Sales</span><span>Sales figures reflect the latest completed analysis.</span></footer>
 </main></div>
 <noscript><p class="noscript">Enable JavaScript to analyse events and view ticket sales.</p></noscript>
-<script src="/app.js"></script><script type="module" src="/assets/motion/motion.js"></script>
+<script src="/app.js"></script><script src="/campaign.js"></script><script type="module" src="/assets/motion/motion.js"></script>
 </body></html>

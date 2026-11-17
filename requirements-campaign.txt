@@ -1,0 +1,2 @@
+# Chromium runs the public campaign post collector.
+playwright==1.65.2
