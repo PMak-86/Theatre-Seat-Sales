@@ -2353,19 +2353,7 @@ def event_history(event_id: int | None = None, event_url: str | None = None) -> 
     }
 
 
-def post_show_report(event_url: str) -> dict[str, Any]:
-    history = event_history(event_url=event_url)
-    event = history["event"]
-    cache_report_header(event)
-    performances = history["performances"]
-    final_rows = best_finalized_performance_rows(performances)
-    final_sessions = [
-        performance_snapshot_to_session(row)
-        for _, row in sorted(final_rows.items(), key=lambda item: item[1].get("show_datetime") or "")
-    ]
-    report_data = {"sessions": final_sessions, "summary": {}}
-    recompute_summary(report_data)
-
+def performance_history(performances: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
     history_by_schedule: dict[int, list[dict[str, Any]]] = {}
     for row in performances:
         schedule_id = int(row.get("schedule_id") or 0)
@@ -2397,6 +2385,21 @@ def post_show_report(event_url: str) -> dict[str, Any]:
             if not deduped or point["capturedAt"] != deduped[-1]["capturedAt"]:
                 deduped.append(point)
         history_by_schedule[schedule_id] = deduped
+    return history_by_schedule
+
+
+def post_show_report(event_url: str) -> dict[str, Any]:
+    history = event_history(event_url=event_url)
+    event = history["event"]
+    cache_report_header(event)
+    performances = history["performances"]
+    final_rows = best_finalized_performance_rows(performances)
+    final_sessions = [
+        performance_snapshot_to_session(row)
+        for _, row in sorted(final_rows.items(), key=lambda item: item[1].get("show_datetime") or "")
+    ]
+    report_data = {"sessions": final_sessions, "summary": {}}
+    recompute_summary(report_data)
 
     final_snapshot_markers = []
     for schedule_id, row in final_rows.items():
@@ -2418,7 +2421,7 @@ def post_show_report(event_url: str) -> dict[str, Any]:
         "dailySnapshots": history["snapshots"],
         "uplift": history["uplift"],
         "performances": final_sessions,
-        "performanceHistory": history_by_schedule,
+        "performanceHistory": performance_history(performances),
         "finalSnapshotMarkers": final_snapshot_markers,
         "campaignAnalysis": campaign_analysis(event_url, history["snapshots"]),
         "complete": bool(final_sessions) and len(final_sessions) == len(final_rows),
@@ -3074,11 +3077,12 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             history = event_history(int(event_id_raw) if event_id_raw.isdigit() else None, event_url or None)
-            # The dashboard uses the corrected daily series, not the full per-seat history.
-            # Compute it through the existing path, then omit unused records from the wire.
-            # Existing API callers and post-show reports keep the full response by default.
-            if params.get("view", [""])[0] == "summary":
-                history = {key: value for key, value in history.items() if key != "performances"}
+            view = params.get("view", [""])[0]
+            if view in {"summary", "dashboard"}:
+                history = dict(history)
+                performances = history.pop("performances")
+                if view == "dashboard":
+                    history["performanceHistory"] = performance_history(performances)
             self.send_json(200, history)
         except StorageError as exc:
             self.send_json(404, {"error": str(exc)})

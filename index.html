@@ -17,9 +17,7 @@
 Marketing collage and screen-height sections adapted to the user's functional dashboard brief. -->
 <a class="skip-link" href="#main-content">Skip to content</a>
 <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
-<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
 <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M20 8V5H4v3a4 4 0 0 1 0 8v3h16v-3a4 4 0 0 1 0-8Z"/><path d="M15 5v3m0 3v2m0 3v3"/></symbol>
-<symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 4v16h17M8 14l4-5 4 3 5-7"/></symbol>
 <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-6-6 6 6-6 6"/></symbol>
 <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
 <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 14 4-4m-6 6-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1" transform="translate(1 0) scale(.9 1)"/></symbol>
@@ -33,18 +31,12 @@ Marketing collage and screen-height sections adapted to the user's functional da
 <aside class="sidebar" id="sidebar" aria-label="Workspace navigation">
 <a class="brand" href="/" aria-label="Theatre Seat Sales home"><span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-ticket"/></svg></span><span>Theatre<br><strong>Seat Sales<span class="brand-period">.</span></strong></span></a>
 <div class="workspace-label">Box-office workspace</div>
-<nav class="workspace-nav" aria-label="Dashboard views">
-<button type="button" class="nav-item active" data-view="overview" aria-current="page"><svg class="icon"><use href="#i-grid"/></svg>Overview</button>
-<button type="button" class="nav-item" data-view="performances"><svg class="icon"><use href="#i-ticket"/></svg>Performances<span id="nav-count" class="nav-count" hidden></span></button>
-<button type="button" class="nav-item" data-view="history"><svg class="icon"><use href="#i-chart"/></svg>Sales history</button>
-</nav>
-<div class="sidebar-divider"></div>
 <div id="bookmarks" class="bookmarks"><div class="saved-heading"><strong>Saved shows</strong><span id="bookmark-count">0 / 8</span></div><div id="bookmark-list" class="bookmark-list"></div></div>
 <button id="new-event" class="new-event" type="button"><svg class="icon"><use href="#i-plus"/></svg>Analyse another show</button>
 <div class="sidebar-foot"><span class="workspace-monogram">TS</span><div>Theatre Seat Sales<small>TicketSearch &amp; TryBooking</small></div></div>
 </aside>
 <div class="workspace">
-<header class="topbar"><div class="breadcrumb"><button id="menu-toggle" class="icon-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg class="icon"><use href="#i-menu"/></svg></button><span>Workspace</span><span aria-hidden="true">/</span><strong id="view-label">Overview</strong></div><span class="topbar-note"><span class="status-dot"></span>Box-office insights</span></header>
+<header class="topbar"><div class="breadcrumb"><button id="menu-toggle" class="icon-button" type="button" aria-label="Open navigation" aria-controls="sidebar" aria-expanded="false"><svg class="icon"><use href="#i-menu"/></svg></button><span>Workspace</span><span aria-hidden="true">/</span><strong>Overview</strong></div><span class="topbar-note"><span class="status-dot"></span>Box-office insights</span></header>
 <main id="main-content" class="app wrap" tabindex="-1">
 <section class="page-heading hero" data-enter><div class="hero-text"><p class="eyebrow">Theatre Seat Sales</p><h1 id="page-title">Your sales overview</h1><p class="page-intro" id="page-intro">A closer look at every performance.</p></div><button class="btn btn--secondary export-button" id="export-csv" type="button" disabled><svg class="icon"><use href="#i-download"/></svg>Export CSV</button></section>
 <section class="event-search" aria-labelledby="search-title"><form id="analyse-form" class="search"><div class="field"><label id="search-title" for="event-input">Event URL or TicketSearch number</label><div class="input-wrap"><svg class="icon"><use href="#i-link"/></svg><input id="event-input" name="event" value="162924" placeholder="Paste an event link or number" autocomplete="off" required aria-describedby="input-help status"></div></div><button class="btn btn--primary" type="submit"><span class="analyse-label">Analyse event</span><svg class="icon m-arrow"><use href="#i-arrow"/></svg></button></form><p id="input-help" class="input-help">Supports TicketSearch event links and numbers, and TryBooking event links.</p></section>
@@ -55,7 +47,7 @@ Marketing collage and screen-height sections adapted to the user's functional da
 <section id="summary" class="summary" hidden aria-labelledby="event-name">
 <div class="show-header"><div class="show-copy"><div class="show-kicker"><span id="provider-label">Event analysis</span><span class="kicker-separator" aria-hidden="true">/</span><span id="event-run-label">Performance overview</span></div><h2 id="event-name"></h2><div class="show-meta"><span id="event-location"></span><span id="event-dates"></span></div><p id="analysis-time" class="analysis-time"></p></div><div class="show-actions"><button id="save-bookmark" class="btn btn--secondary bookmark-save-button" type="button" disabled aria-label="Save current show">Save show</button><button id="post-show-report" class="btn btn--secondary report-button" type="button" hidden>Post-show report <span aria-hidden="true">↗</span></button></div><div class="show-art" hidden></div></div>
 <div class="metrics">
-<div class="metric-card metric-main"><small>Tickets sold</small><span id="metric-sold">—</span><div class="metric-note"><span id="overall-sold-today">—</span> sold today</div></div>
+<div class="metric-card metric-main"><small>Tickets sold</small><span id="metric-sold">—</span><div class="metric-note"><span id="overall-sold-today">—</span> <span id="overall-sales-baseline">since last daily snapshot</span></div></div>
 <div class="metric-card"><small>Seats available</small><span id="metric-left">—</span><div class="metric-note">Across <span id="metric-performances">—</span> performances</div></div>
 <div class="metric-card"><small>Estimated revenue</small><span id="metric-revenue">—</span><div class="metric-note">AUD · ticket sales estimate</div></div>
 <div class="metric-card metric-occupancy"><div><small>Sell-through</small><span id="overall-percent">—</span><div class="metric-note">Sales + designated holds</div></div><div class="overall" id="overall-ring" aria-hidden="true"><div class="ring-inner"><svg class="icon"><use href="#i-ticket"/></svg></div></div></div>
@@ -69,9 +61,27 @@ Marketing collage and screen-height sections adapted to the user's functional da
 <div class="history-footer"><details class="history-data"><summary>View snapshot data</summary><table><thead><tr><th scope="col">Snapshot</th><th scope="col">Tickets sold</th></tr></thead><tbody id="history-data-body"></tbody></table></details><span id="history-range-label">All recorded snapshots</span></div>
 </section>
 <section id="results" class="table-wrap panel" hidden aria-labelledby="performances-title">
-<div class="performance-heading"><div><h2 id="performances-title">Performances <span id="performance-count" class="count-badge"></span></h2><p>Select a performance to inspect seats and hold codes.</p></div><button id="expand-all" class="btn btn--secondary" type="button" aria-expanded="false">Expand all</button></div>
+<div class="performance-heading"><div><h2 id="performances-title">Performances <span id="performance-count" class="count-badge"></span></h2><p>Select a performance to inspect seats and hold codes.</p></div><button id="expand-all" class="btn btn--secondary mobile-performance" type="button" aria-expanded="false">Expand all</button></div>
 <div class="performance-toolbar"><div class="session-search"><label for="session-search">Find a performance</label><svg class="icon"><use href="#i-search"/></svg><input type="search" id="session-search" placeholder="Find a date or time"></div><div class="select-field"><label for="session-filter">Show</label><select id="session-filter"><option value="all">All performances</option><option value="upcoming">Upcoming</option><option value="final">Final numbers</option></select></div><div class="select-field"><label for="session-sort">Sort by</label><select id="session-sort"><option value="date">Date, earliest first</option><option value="sold">Most tickets sold</option><option value="available">Most seats available</option><option value="sellthrough">Highest sell-through</option></select></div></div>
-<table class="performance-table"><thead><tr><th scope="col"><span class="sr-only">Details</span></th><th scope="col">Performance</th><th scope="col">Time</th><th scope="col">Tickets sold</th><th scope="col">Unavailable</th><th scope="col">Available</th><th scope="col">Sold today</th><th scope="col">Sell-through</th></tr></thead><tbody id="sessions"></tbody></table>
+<div class="performance-workspace" hidden>
+<div class="performance-picker">
+<div class="performance-list-heading"><span>Performance</span><span>% sold</span></div>
+<ul id="performance-list" class="performance-list" aria-label="Choose a performance"></ul>
+</div>
+<section id="selected-performance" class="selected-performance" aria-labelledby="selected-performance-title">
+<h3 id="selected-performance-title" aria-live="polite"></h3>
+<dl id="selected-performance-stats" class="performance-stats"></dl>
+<div id="selected-performance-notes" class="performance-notes"></div>
+<section id="performance-history" class="performance-history" aria-labelledby="performance-history-title">
+<h4 id="performance-history-title">Performance sales history</h4>
+<p id="performance-history-status" role="status"></p>
+<div class="history-chart-wrap" id="performance-chart-wrap" hidden><canvas id="performance-chart" role="img" aria-label="Tickets sold for the selected performance"></canvas><div class="history-tooltip" hidden></div></div>
+<details id="performance-history-data" class="history-data" hidden><summary>View performance snapshots</summary><table><thead><tr><th scope="col">Snapshot</th><th scope="col">Tickets sold</th></tr></thead><tbody id="performance-history-body"></tbody></table></details>
+</section>
+<div id="selected-performance-details"></div>
+</section>
+</div>
+<table class="performance-table mobile-performance"><thead><tr><th scope="col"><span class="sr-only">Details</span></th><th scope="col">Performance</th><th scope="col">Time</th><th scope="col">Tickets sold</th><th scope="col">Unavailable</th><th scope="col">Available</th><th scope="col">Sold today</th><th scope="col">Sell-through</th></tr></thead><tbody id="sessions"></tbody></table>
 <p id="no-performances" class="no-performances" hidden>No performances match these filters.</p><div class="table-footer"><span id="results-count"></span><span>All times in Sydney time</span></div>
 </section>
 </div>

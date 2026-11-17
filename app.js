@@ -11,15 +11,18 @@ const bookmarksEl = document.querySelector("#bookmarks");
 const bookmarkListEl = document.querySelector("#bookmark-list");
 const saveBookmarkButton = document.querySelector("#save-bookmark");
 const postShowReportButton = document.querySelector("#post-show-report");
-const historyTooltipEl = document.querySelector("#history-tooltip");
+const performanceList = document.querySelector("#performance-list");
+const performanceChart = document.querySelector("#performance-chart");
 const BOOKMARK_STORAGE_KEY = "theatreSeatSales.savedShows";
 const MAX_BOOKMARKS = 8;
 let currentEvent = null;
-let chartPoints = [];
+const chartPoints = new WeakMap();
 let currentData = null;
 let historyData = { snapshots: [] };
 let visibleSnapshots = [];
-let activeView = "overview";
+let performanceSnapshots = [];
+let performanceHistoryStatus = "loading";
+let selectedPerformance = null;
 let selectedRange = "all";
 let analysisRequest = 0;
 let analysisController = null;
@@ -195,6 +198,13 @@ function percentCellLabel(session) {
   if (session.capacityUnknown && session.isSoldOut) return "Sold out";
   if (session.capacityUnknown) return "Capacity unknown";
   return percent(session.effectiveSoldPercent);
+}
+
+function sellThroughBar(session) {
+  return `<div class="bar">
+    <span>${percentCellLabel(session)}</span>
+    ${session.capacityUnknown ? "" : `<span class="track" aria-hidden="true"><span class="fill" style="width: ${progressWidth(session.effectiveSoldPercent)}%"></span></span>`}
+  </div>`;
 }
 
 function renderSeatMap(seatMap) {
@@ -572,13 +582,15 @@ function formatDateRange(range) {
 }
 
 function render(data) {
+  const previous = currentData?.eventUrl === data.eventUrl
+    ? currentData?.sessions[selectedPerformance]?.scheduleId
+    : null;
   currentData = data;
+  selectedPerformance = previous == null ? null : data.sessions.findIndex(session => session.scheduleId === previous);
   document.querySelector("#dashboard").hidden = false;
   document.querySelector("#welcome").hidden = true;
   document.querySelector("#export-csv").disabled = false;
   setText("#provider-label", data.provider === "trybooking" ? "TryBooking" : "TicketSearch");
-  setText("#nav-count", data.sessions.length);
-  document.querySelector("#nav-count").hidden = false;
   setText("#performance-count", data.sessions.length);
   const summary = data.summary;
   const art = document.querySelector(".show-art");
@@ -610,7 +622,9 @@ function render(data) {
   setText("#overall-percent", summary.capacityUnknown ? "N/A" : percent(summary.effectiveSoldPercent));
   document.querySelector("#overall-ring").style.setProperty("--sold", `${summary.capacityUnknown ? 0 : Math.min(summary.effectiveSoldPercent, 100)}%`);
   setText("#overall-sold-today", dailyDeltaLabel(summary.salesSinceDailySnapshot));
-  document.querySelector("#overall-sold-today").title = baselineLabel(summary.dailySnapshotCapturedAt);
+  setText("#overall-sales-baseline", summary.dailySnapshotCapturedAt
+    ? `since ${formatSnapshotDateTime.format(new Date(summary.dailySnapshotCapturedAt))}`
+    : "since last daily snapshot");
   setText("#metric-performances", formatNumber.format(summary.performances));
   setText("#metric-total", summary.capacityUnknown ? "Unknown" : formatNumber.format(summary.totalSeats));
   setText("#metric-sold", formatNumber.format(summary.ticketsSold));
@@ -636,12 +650,7 @@ function render(data) {
       <td data-label="Sold today" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">
         <span class="delta-value">${dailyDeltaLabel(session.salesSinceDailySnapshot)}</span>
       </td>
-      <td data-label="Sell-through">
-        <div class="bar">
-          <span>${percentCellLabel(session)}</span>
-          <span class="track"><span class="fill" style="width: ${session.capacityUnknown ? 0 : progressWidth(session.effectiveSoldPercent)}%"></span></span>
-        </div>
-      </td>
+      <td data-label="Sell-through">${sellThroughBar(session)}</td>
     `;
     sessionsEl.appendChild(row);
 
@@ -649,26 +658,6 @@ function render(data) {
     detailRow.id = `detail-${index}`;
     detailRow.className = "detail-row";
     detailRow.hidden = true;
-    detailRow.innerHTML = `
-      <td colspan="8">
-        <div class="detail-panel">
-          <div class="detail-summary">
-            <strong>Seat status detail</strong>
-            <span>${formatNumber.format(session.ticketsSold)} sold</span>
-            <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sell-through</span>
-            <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
-            <span>${formatNumber.format(session.availableSeats)} available to buy</span>
-            ${session.capacityUnknown ? `<span>${escapeHtml(session.statusLabel || "Capacity unknown")}</span>` : ""}
-            <span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold today</span>
-            <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
-            ${session.isFinal ? `<span class="final-note">${finalNumbersBadge(session)}</span>` : ""}
-            ${session.finalSnapshotCapturedAt ? `<span>Snapshot: ${escapeHtml(formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt)))}</span>` : ""}
-          </div>
-          ${renderSeatMap(session.seatMap)}
-          ${renderBreakdown(session.breakdown)}
-        </div>
-      </td>
-    `;
     sessionsEl.appendChild(detailRow);
   });
 
@@ -677,9 +666,96 @@ function render(data) {
   document.querySelector("#session-search").value = "";
   document.querySelector("#session-filter").value = "all";
   document.querySelector("#session-sort").value = "date";
-  applyPerformanceFilters();
-  setView(activeView, false);
   loadHistory(data);
+  applyPerformanceFilters();
+}
+
+function performanceNotes(session) {
+  return `
+    ${session.capacityUnknown && session.statusLabel ? `<span>${escapeHtml(session.statusLabel)}</span>` : ""}
+    <span title="${escapeHtml(session.revenueEstimate?.basis || "Estimated ticket revenue")}">${revenueLabel(session.revenueEstimate)} est. revenue</span>
+    ${finalNumbersBadge(session)}
+    ${session.finalSnapshotCapturedAt ? `<span>Snapshot: ${escapeHtml(formatSnapshotDateTime.format(new Date(session.finalSnapshotCapturedAt)))}</span>` : ""}
+  `;
+}
+
+function performanceSeatDetails(session) {
+  return `${renderSeatMap(session.seatMap)}${renderBreakdown(session.breakdown)}`;
+}
+
+function performanceDetails(session) {
+  return `
+    <div class="detail-summary">
+      <span>${formatNumber.format(session.ticketsSold)} sold</span>
+      <span>${formatNumber.format(session.effectiveSoldSeats)} counted in sell-through</span>
+      <span>${formatNumber.format(session.unavailableSeats)} unavailable but not sold</span>
+      <span>${formatNumber.format(session.availableSeats)} available to buy</span>
+      ${!session.isFinal && !session.isHistoricalSnapshot && session.dailySnapshotCapturedAt
+        ? `<span>${dailyDeltaLabel(session.salesSinceDailySnapshot)} sold since ${escapeHtml(formatSnapshotDateTime.format(new Date(session.dailySnapshotCapturedAt)))}</span>`
+        : ""}
+      ${performanceNotes(session)}
+    </div>
+    ${performanceSeatDetails(session)}
+  `;
+}
+
+function populateMobileDetails(row) {
+  if (row.firstElementChild) return;
+  const index = Number(row.id.replace("detail-", ""));
+  row.innerHTML = `<td colspan="8"><div class="detail-panel"><h3>Seat status detail</h3>${performanceDetails(currentData.sessions[index])}</div></td>`;
+}
+
+function selectPerformance(index) {
+  selectedPerformance = index;
+  const session = currentData.sessions[index];
+  if (!session) return;
+  for (const button of performanceList.querySelectorAll("button")) {
+    button.setAttribute("aria-pressed", String(Number(button.dataset.index) === index));
+  }
+  const when = session.dateTime ? new Date(session.dateTime) : null;
+  setText("#selected-performance-title", when
+    ? `${formatDate.format(when)} · ${formatTime.format(when)}`
+    : "Performance time unavailable");
+  document.querySelector("#selected-performance-stats").innerHTML = `
+    <div><dt>Tickets sold</dt><dd>${soldCellLabel(session)}</dd></div>
+    <div><dt>Unavailable</dt><dd>${formatNumber.format(session.unavailableSeats)}</dd></div>
+    <div><dt>Available</dt><dd>${formatNumber.format(session.availableSeats)}</dd></div>
+    <div><dt>Sold today</dt><dd class="delta-value" title="${escapeHtml(baselineLabel(session.dailySnapshotCapturedAt))}">${dailyDeltaLabel(session.salesSinceDailySnapshot)}</dd></div>
+    <div><dt>Sell-through</dt><dd>${sellThroughBar(session)}</dd></div>
+  `;
+  document.querySelector("#selected-performance-notes").innerHTML = performanceNotes(session);
+  document.querySelector("#selected-performance-details").innerHTML = performanceSeatDetails(session);
+  renderPerformanceHistory();
+}
+
+function renderPerformanceHistory() {
+  const session = currentData?.sessions[selectedPerformance];
+  const recorded = historyData.performanceHistory?.[session?.scheduleId] || [];
+  // Later event analyses can carry a completed performance's final count forward.
+  const finalTime = Date.parse(session?.finalSnapshotCapturedAt);
+  const points = Number.isFinite(finalTime)
+    ? recorded.filter(point => Date.parse(point.capturedAt) <= finalTime)
+    : recorded;
+  performanceSnapshots = points.map(point => ({
+    captured_at: point.capturedAt,
+    actual_sold: point.actualSold,
+  }));
+  const hasPoints = points.length > 0;
+  const latest = points.at(-1);
+  setText("#performance-history-status", latest
+    ? `${formatNumber.format(latest.actualSold)} tickets sold at the last snapshot · ${formatSnapshotDateTime.format(new Date(latest.capturedAt))}`
+    : { loading: "Loading performance snapshots…", error: "Performance sales history is currently unavailable.", ready: "No sales snapshots have been recorded for this performance yet." }[performanceHistoryStatus]);
+  document.querySelector("#performance-chart-wrap").hidden = !hasPoints;
+  document.querySelector("#performance-history-data").hidden = !hasPoints;
+  document.querySelector("#performance-history-data").open = false;
+  renderSnapshotTable("#performance-history-body", performanceSnapshots);
+  drawHistoryChart(performanceSnapshots, performanceChart);
+}
+
+function renderSnapshotTable(selector, snapshots) {
+  document.querySelector(selector).innerHTML = snapshots.map(snapshot =>
+    `<tr><td>${escapeHtml(formatSnapshotDateTime.format(new Date(snapshot.captured_at)))}</td><td>${formatNumber.format(Number(snapshot.actual_sold || 0))}</td></tr>`
+  ).join("");
 }
 
 async function loadHistory(data) {
@@ -688,6 +764,8 @@ async function loadHistory(data) {
   const controller = historyController;
   historyData = { snapshots: [] };
   visibleSnapshots = [];
+  performanceHistoryStatus = "loading";
+  renderPerformanceHistory();
   historyEl.hidden = false;
   historyStatusEl.textContent = "Loading recorded snapshots…";
   drawHistoryChart([]);
@@ -695,17 +773,21 @@ async function loadHistory(data) {
     const historyUrl = data.eventUrl
       ? `/api/history?eventUrl=${encodeURIComponent(data.eventUrl)}`
       : `/api/history?eventId=${encodeURIComponent(data.eventId)}`;
-    const response = await fetch(`${historyUrl}&view=summary`, { signal: controller.signal });
+    const response = await fetch(`${historyUrl}&view=dashboard`, { signal: controller.signal });
     const history = await response.json();
     if (!response.ok) {
       throw new Error(history.error || "No history found.");
     }
     if (currentData !== data || controller.signal.aborted) return;
     historyData = history;
+    performanceHistoryStatus = "ready";
+    renderPerformanceHistory();
     renderHistory(history);
     historyEl.hidden = false;
   } catch (error) {
     if (currentData !== data || controller.signal.aborted) return;
+    performanceHistoryStatus = "error";
+    renderPerformanceHistory();
     document.querySelector("#history-data-body").innerHTML = "";
     historyStatusEl.textContent = "Sales history will appear after snapshots are collected.";
     setText("#uplift-day", "-");
@@ -721,7 +803,7 @@ function renderHistory(history) {
   const cutoff = selectedRange === "all" ? -Infinity : latestTime - (Number(selectedRange) - 1) * 86400000;
   const snapshots = allSnapshots.filter(snapshot => chartDate(snapshot).getTime() >= cutoff);
   visibleSnapshots = snapshots;
-  document.querySelector("#history-data-body").innerHTML = snapshots.map((snapshot) => `<tr><td>${escapeHtml(formatSnapshotDateTime.format(new Date(snapshot.captured_at)))}</td><td>${formatNumber.format(Number(snapshot.actual_sold || 0))}</td></tr>`).join("");
+  renderSnapshotTable("#history-data-body", snapshots);
   const latest = snapshots[snapshots.length - 1];
   historyStatusEl.textContent = snapshots.length === 0 ? "Sales history will appear after snapshots are collected." : snapshots.length === 1
     ? "1 daily snapshot collected. Uplift appears after the next scheduled snapshot."
@@ -766,8 +848,7 @@ function niceTicks(minValue, maxValue, count = 5) {
   return ticks;
 }
 
-function drawHistoryChart(snapshots) {
-  const canvas = document.querySelector("#history-chart");
+function drawHistoryChart(snapshots, canvas = historyChart) {
   const rect = canvas.getBoundingClientRect();
   if (rect.width < 10 || rect.height < 10) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -777,8 +858,9 @@ function drawHistoryChart(snapshots) {
   canvas.height = Math.round(height * dpr);
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
-  chartPoints = [];
-  hideHistoryTooltip();
+  const points = [];
+  chartPoints.set(canvas, points);
+  hideHistoryTooltip(canvas);
   ctx.clearRect(0, 0, width, height);
   const padding = { top: 24, right: 16, bottom: 34, left: width < 500 ? 42 : 54 };
   const plotWidth = width - padding.left - padding.right;
@@ -786,6 +868,7 @@ function drawHistoryChart(snapshots) {
   ctx.font = '11px "Funnel Sans", sans-serif';
   ctx.fillStyle = "#727d70";
   if (!snapshots.length) {
+    canvas.setAttribute("aria-label", "No sales snapshots recorded yet");
     ctx.textAlign = "center";
     ctx.fillText("No snapshots recorded yet", width / 2, height / 2);
     return;
@@ -833,7 +916,7 @@ function drawHistoryChart(snapshots) {
   ctx.stroke();
   values.forEach((value, index) => {
     const x = pointX(index), y = pointY(value);
-    chartPoints.push({ x: x * dpr, y: y * dpr, value, capturedAt: snapshots[index].captured_at });
+    points.push({ x: x * dpr, y: y * dpr, value, capturedAt: snapshots[index].captured_at });
     if (values.length <= 12 || index === values.length - 1) {
       ctx.beginPath();
       ctx.arc(x, y, index === values.length - 1 ? 4 : 3, 0, Math.PI * 2);
@@ -844,28 +927,30 @@ function drawHistoryChart(snapshots) {
       ctx.stroke();
     }
   });
-  const count = Math.min(snapshots.length, width < 500 ? 3 : 6);
-  const indices = count <= 1 ? [0] : [...new Set(Array.from({ length: count }, (_, i) => Math.round(i * (snapshots.length - 1) / (count - 1))))];
-  const dateLabel = new Intl.DateTimeFormat("en-AU", { day: "numeric", month: "short", timeZone: "Australia/Sydney" });
-  indices.forEach((index, i) => {
-    ctx.textAlign = i === 0 ? "left" : i === indices.length - 1 ? "right" : "center";
-    ctx.fillStyle = "#727d70";
-    ctx.fillText(dateLabel.format(chartDate(snapshots[index])), pointX(index), height - 10);
+  const day = 86400000;
+  const span = lastTime - firstTime;
+  const intraday = span > 0 && span < day;
+  const count = span === 0 ? 1 : Math.min(snapshots.length, width < 500 ? 3 : 6, intraday ? 3 : Math.floor(span / day) + 1);
+  const dateLabel = new Intl.DateTimeFormat("en-AU", {
+    day: "numeric", month: "short", timeZone: "Australia/Sydney",
+    ...(intraday ? { hour: "numeric", minute: "2-digit" } : {}),
   });
+  for (let index = 0; index < count; index++) {
+    const ratio = count === 1 ? 0.5 : index / (count - 1);
+    ctx.textAlign = count === 1 ? "center" : index === 0 ? "left" : index === count - 1 ? "right" : "center";
+    ctx.fillStyle = "#727d70";
+    ctx.fillText(dateLabel.format(new Date(firstTime + ratio * span)), padding.left + ratio * plotWidth, height - 10);
+  }
   canvas.setAttribute("aria-label", snapshots.length + " sales snapshots. Latest: " + formatNumber.format(values[values.length - 1]) + " tickets sold. Exact values are in the snapshot table below.");
 }
 
 
-function hideHistoryTooltip() {
-  if (historyTooltipEl) {
-    historyTooltipEl.hidden = true;
-  }
+function hideHistoryTooltip(canvas) {
+  canvas.parentElement.querySelector(".history-tooltip").hidden = true;
 }
 
-function showHistoryTooltip(point, clientX) {
-  if (!historyTooltipEl) return;
-
-  const canvas = document.querySelector("#history-chart");
+function showHistoryTooltip(canvas, point, clientX) {
+  const historyTooltipEl = canvas.parentElement.querySelector(".history-tooltip");
   const canvasRect = canvas.getBoundingClientRect();
   const wrapRect = canvas.parentElement.getBoundingClientRect();
   const scaleX = canvasRect.width / canvas.width;
@@ -889,17 +974,18 @@ function showHistoryTooltip(point, clientX) {
 }
 
 function handleHistoryPointer(event) {
-  if (!chartPoints.length) {
-    hideHistoryTooltip();
+  const canvas = event.currentTarget;
+  const points = chartPoints.get(canvas);
+  if (!points?.length) {
+    hideHistoryTooltip(canvas);
     return;
   }
 
-  const canvas = document.querySelector("#history-chart");
   const rect = canvas.getBoundingClientRect();
   const x = ((event.clientX - rect.left) / rect.width) * canvas.width;
   const y = ((event.clientY - rect.top) / rect.height) * canvas.height;
   const hitRadius = (event.pointerType === "touch" ? 30 : 18) * (canvas.width / rect.width);
-  const nearest = chartPoints
+  const nearest = points
     .map((point) => ({
       point,
       distance: Math.hypot(point.x - x, point.y - y),
@@ -907,13 +993,13 @@ function handleHistoryPointer(event) {
     .sort((a, b) => a.distance - b.distance)[0];
 
   if (!nearest || nearest.distance > hitRadius) {
-    hideHistoryTooltip();
+    hideHistoryTooltip(canvas);
     canvas.style.cursor = "default";
     return;
   }
 
   canvas.style.cursor = "pointer";
-  showHistoryTooltip(nearest.point, event.clientX);
+  showHistoryTooltip(canvas, nearest.point, event.clientX);
 }
 
 function renderBreakdown(breakdown = []) {
@@ -962,6 +1048,7 @@ sessionsEl.addEventListener("click", (event) => {
   const detailRow = document.querySelector(`#${row.dataset.detail}`);
   const button = row.querySelector(".expand-button");
   const isOpen = !detailRow.hidden;
+  if (!isOpen) populateMobileDetails(detailRow);
   detailRow.hidden = isOpen;
   button.textContent = isOpen ? "+" : "-";
   button.setAttribute("aria-expanded", String(!isOpen));
@@ -998,11 +1085,18 @@ postShowReportButton.addEventListener("click", () => {
   window.open(`/report.html?eventUrl=${encodeURIComponent(currentEvent.url)}`, "_blank", "noopener");
 });
 const historyChart = document.querySelector("#history-chart");
-historyChart.addEventListener("pointermove", handleHistoryPointer);
-historyChart.addEventListener("pointerdown", handleHistoryPointer);
-historyChart.addEventListener("pointerleave", () => {
-  historyChart.style.cursor = "default";
-  hideHistoryTooltip();
+for (const canvas of [historyChart, performanceChart]) {
+  canvas.addEventListener("pointermove", handleHistoryPointer);
+  canvas.addEventListener("pointerdown", handleHistoryPointer);
+  canvas.addEventListener("pointerleave", () => {
+    canvas.style.cursor = "default";
+    hideHistoryTooltip(canvas);
+  });
+}
+
+performanceList.addEventListener("click", event => {
+  const button = event.target.closest("button[data-index]");
+  if (button) selectPerformance(Number(button.dataset.index));
 });
 
 async function analyse(event) {
@@ -1068,34 +1162,6 @@ async function analyse(event) {
   }
 }
 
-function setView(view, animate = true) {
-  if (!["overview", "performances", "history"].includes(view)) return;
-  activeView = view;
-  const titles = { overview: ["Overview", "Your sales overview", "A closer look at every performance."], performances: ["Performances", "Your performances", "Find the seats and sessions that need your attention."], history: ["Sales history", "Your sales history", "Follow ticket sales across the run."] };
-  const [label, title, intro] = titles[view];
-  setText("#view-label", label);
-  setText("#page-title", title);
-  setText("#page-intro", intro);
-  const dashboard = document.querySelector("#dashboard");
-  dashboard.dataset.view = view;
-  document.querySelectorAll("[data-view].nav-item").forEach(button => {
-    const selected = button.dataset.view === view;
-    button.classList.toggle("active", selected);
-    if (selected) button.setAttribute("aria-current", "page");
-    else button.removeAttribute("aria-current");
-  });
-  if (animate && currentData) {
-    dashboard.classList.remove("view-change");
-    void dashboard.offsetWidth;
-    dashboard.classList.add("view-change");
-  }
-  const menuWasOpen = document.querySelector("#sidebar").classList.contains("open");
-  closeMenu();
-  if (menuWasOpen) document.querySelector("#main-content").focus({ preventScroll: true });
-  if (animate) window.scrollTo({ top: 0, behavior: "instant" });
-  requestAnimationFrame(() => drawHistoryChart(visibleSnapshots));
-}
-
 function filteredSessions() {
   if (!currentData) return [];
   const query = document.querySelector("#session-search").value.trim().toLowerCase();
@@ -1127,6 +1193,26 @@ function applyPerformanceFilters() {
     const row = sessionsEl.querySelector(`[data-index="${index}"]`);
     sessionsEl.append(row, document.querySelector(`#${row.dataset.detail}`));
   });
+  performanceList.innerHTML = visible.map(({ session, index }) => {
+    const when = session.dateTime ? new Date(session.dateTime) : null;
+    const soldPercent = session.capacityUnknown || !(session.totalSeats > 0)
+      ? "N/A"
+      : percent(100 * session.ticketsSold / session.totalSeats);
+    return `<li><button type="button" data-index="${index}" aria-controls="selected-performance" aria-pressed="false">
+      <span class="performance-choice-date"><strong>${when ? formatDate.format(when) : "Date unavailable"}</strong>
+      <span>${when ? formatTime.format(when) : ""}</span></span>
+      <span class="performance-choice-percent">${soldPercent}<span class="sr-only"> sold</span></span>
+    </button></li>`;
+  }).join("");
+  document.querySelector(".performance-workspace").hidden = !visible.length;
+  if (visible.length) {
+    const next = visible.find(({ index }) => index === selectedPerformance)
+      || visible.find(({ session }) => session.dateTime && new Date(session.dateTime).getTime() > Date.now())
+      || visible[0];
+    selectPerformance(next.index);
+  } else {
+    selectedPerformance = null;
+  }
   document.querySelector("#no-performances").hidden = visible.length > 0;
   setText("#results-count", `${visible.length} of ${currentData.sessions.length} performances`);
   document.querySelector("#expand-all").disabled = !visible.length;
@@ -1181,7 +1267,6 @@ function focusEvent() {
   input.select();
 }
 
-document.querySelectorAll(".nav-item").forEach(button => button.addEventListener("click", () => setView(button.dataset.view)));
 document.querySelectorAll("[data-range]").forEach(button => button.addEventListener("click", () => {
   selectedRange = button.dataset.range;
   document.querySelectorAll("[data-range]").forEach(item => {
@@ -1197,7 +1282,9 @@ document.querySelector("#expand-all").addEventListener("click", () => {
   const shouldOpen = document.querySelector("#expand-all").getAttribute("aria-expanded") !== "true";
   sessionsEl.querySelectorAll(".session-row").forEach(row => {
     if (row.hidden) return;
-    document.querySelector(`#${row.dataset.detail}`).hidden = !shouldOpen;
+    const detail = document.querySelector(`#${row.dataset.detail}`);
+    if (shouldOpen) populateMobileDetails(detail);
+    detail.hidden = !shouldOpen;
     row.querySelector("button").setAttribute("aria-expanded", String(shouldOpen));
     row.querySelector("button").textContent = shouldOpen ? "−" : "+";
   });
@@ -1210,7 +1297,7 @@ document.querySelector("#menu-toggle").addEventListener("click", () => {
   const open = document.querySelector("#sidebar").classList.toggle("open");
   document.querySelector("#menu-toggle").setAttribute("aria-expanded", String(open));
   document.querySelector("#menu-toggle").setAttribute("aria-label", open ? "Close navigation" : "Open navigation");
-  if (open) document.querySelector(".nav-item.active").focus();
+  if (open) document.querySelector("#sidebar .brand").focus();
 });
 document.addEventListener("keydown", event => {
   if (event.key === "Escape") closeMenu(true);
@@ -1219,10 +1306,15 @@ document.addEventListener("click", event => {
   if (!event.target.closest("#sidebar, #menu-toggle")) closeMenu();
 });
 let resizeFrame;
-new ResizeObserver(() => {
+const chartResizeObserver = new ResizeObserver(() => {
   cancelAnimationFrame(resizeFrame);
-  resizeFrame = requestAnimationFrame(() => drawHistoryChart(visibleSnapshots));
-}).observe(historyChart.parentElement);
+  resizeFrame = requestAnimationFrame(() => {
+    drawHistoryChart(visibleSnapshots);
+    drawHistoryChart(performanceSnapshots, performanceChart);
+  });
+});
+chartResizeObserver.observe(historyChart.parentElement);
+chartResizeObserver.observe(performanceChart.parentElement);
 
 form.addEventListener("submit", analyse);
 renderBookmarks();

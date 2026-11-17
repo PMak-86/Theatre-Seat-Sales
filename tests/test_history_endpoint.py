@@ -17,7 +17,13 @@ class HistoryEndpointTests(unittest.TestCase):
         payload = {
             "event": {"event_id": 123},
             "snapshots": [{"actual_sold": 37, "effective_sold": 42}],
-            "performances": [{"breakdown": [{"code": "H", "count": 5}]}],
+            "performances": [
+                {"schedule_id": 7, "total_seats": 100, "actual_sold": 37, "effective_sold": 42,
+                 "breakdown": [{"code": "H", "count": 5}],
+                 "event_snapshots": {"source": "daily", "captured_at": "2026-11-15T02:00:00Z"}},
+                {"schedule_id": 7, "total_seats": 0, "actual_sold": 0,
+                 "event_snapshots": {"source": "search", "captured_at": "2026-11-16T02:00:00Z"}},
+            ],
             "uplift": {"day": {"actualSoldChange": -2}},
         }
         with patch("server.event_history", return_value=payload) as history:
@@ -43,6 +49,15 @@ class HistoryEndpointTests(unittest.TestCase):
         (_, body), _, call = self.call("eventUrl=https%3A%2F%2Fbooking.example%2F123&view=summary")
         call.assert_called_once_with(None, "https://booking.example/123")
         self.assertNotIn("performances", body)
+
+    def test_dashboard_includes_compact_sales_by_performance(self):
+        (status, body), original, _ = self.call("eventId=123&view=dashboard")
+        self.assertEqual(status, 200)
+        self.assertNotIn("performances", body)
+        self.assertEqual(body["snapshots"], original["snapshots"])
+        self.assertEqual(body["performanceHistory"], {
+            7: [{"capturedAt": "2026-11-15T02:00:00+00:00", "actualSold": 37, "source": "daily"}],
+        })
 
     def test_invalid_event_still_returns_error(self):
         (status, body), _, call = self.call("eventId=invalid&view=summary")
