@@ -3063,6 +3063,8 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("action") == "post":
                 post = store.add_post(event, body)
                 self.send_json(201, {"post": post}, private=True)
+            elif body.get("action") == "refresh":
+                self.send_json(202, store.request_refresh(event), private=True)
             elif body.get("action") == "edit":
                 post = store.edit_post(event, body.get("postId"), body)
                 self.send_json(200, {"post": post}, private=True)

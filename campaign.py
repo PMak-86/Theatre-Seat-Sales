@@ -11,7 +11,7 @@ PLATFORMS = {
     "tiktok": {"www.tiktok.com", "tiktok.com", "vm.tiktok.com", "vt.tiktok.com"},
 }
 POST_TYPES = {"photo", "video", "reel", "carousel", "story", "link", "text", "other"}
-POST_FIELDS = "id,published_on,platform,post_type,url,notes,preview,capture_status,last_attempt_at"
+POST_FIELDS = "id,published_on,platform,post_type,url,notes,preview,capture_status,last_attempt_at,refresh_requested_at"
 CAPTURE_FIELDS = "captured_at,cadence,views,clicks,engagements,likes,comments,shares"
 FINAL_PERFORMANCE_RUNTIME = timedelta(hours=3)
 
@@ -91,7 +91,7 @@ def capture_cadence(now, opening, finish, published_on, last_capture, local_day)
         return None
     if today >= local_day(opening) - timedelta(days=7):
         return "daily"
-    if last_capture is None or today >= local_day(last_capture) + timedelta(days=7):
+    if today.weekday() == 0:
         return "weekly"
     return None
 
@@ -200,9 +200,16 @@ class CampaignStore:
         captures = self.select_all(f"campaign_captures?post_id=eq.{rows[0]['id']}&select={CAPTURE_FIELDS}&order=captured_at.desc")
         return {"post": rows[0], "captures": captures}
 
-    def worker_posts(self, now, post_id=None):
+    def request_refresh(self, event):
+        finish = instant(event["date_end"]) + FINAL_PERFORMANCE_RUNTIME if event["date_end"] else None
+        if finish is None or datetime.now(timezone.utc) >= finish:
+            raise CampaignError("Metric checks have ended for this show.")
+        self.request("rpc/request_campaign_refresh", "POST", {"show_id": event["id"]})
+        return {"queued": True}
+
+    def worker_posts(self, now, post_id=None, recording=False):
         path = (
-            "campaign_posts?removed_at=is.null&select=id,platform,url,published_on,preview,last_attempt_at,"
+            "campaign_posts?removed_at=is.null&select=id,platform,url,published_on,preview,last_attempt_at,refresh_requested_at,"
             "tracked_events!inner(date_start,date_end),campaign_captures(captured_at)&order=id.asc"
             "&campaign_captures.order=captured_at.desc&campaign_captures.limit=1"
             f"&tracked_events.date_end=gt.{quote((now - FINAL_PERFORMANCE_RUNTIME).isoformat(), safe='')}"
@@ -221,11 +228,25 @@ class CampaignStore:
             cadence = capture_cadence(now, instant(event["date_start"]), finish,
                                       date.fromisoformat(post["published_on"]),
                                       instant(latest[0]["captured_at"]) if latest else None, self.local_day)
+            requested = instant(post["refresh_requested_at"]) if post.get("refresh_requested_at") else None
+            last = instant(latest[0]["captured_at"]) if latest else None
+            pending = requested is not None and (last is None or requested > last)
+            if now >= finish or date.fromisoformat(post["published_on"]) > self.local_day(now):
+                continue
+            if recording or pending:
+                cadence = "daily" if self.local_day(now) >= self.local_day(instant(event["date_start"])) - timedelta(days=7) else "weekly"
             if cadence:
                 yield post, finish, cadence
 
     def worker_queue(self):
-        return [post["id"] for post, _, _ in self.worker_posts(datetime.now(timezone.utc))]
+        now = datetime.now(timezone.utc)
+        # local_day also provides a portable Sydney offset without requiring tzdata on Windows.
+        from server import sydney_offset_hours
+        local_hour = (now + timedelta(hours=sydney_offset_hours(now))).hour
+        return [post["id"] for post, _, _ in self.worker_posts(now)
+                if post.get("refresh_requested_at") and (
+                    not post["campaign_captures"] or instant(post["refresh_requested_at"]) > instant(post["campaign_captures"][0]["captured_at"])
+                ) or local_hour >= 8]
 
     def claim_capture(self, post_id):
         if not post_id:
@@ -235,21 +256,24 @@ class CampaignStore:
         if not match:
             return None
         post, finish, _ = match
-        if not self.request("rpc/claim_campaign_post", "POST", {"target": post["id"]}):
+        claimed = self.request("rpc/claim_campaign_post", "POST", {"target": post["id"]})
+        if not claimed:
             return None
-        return {key: post[key] for key in ("id", "platform", "url", "preview")} | {"finishAt": finish.isoformat()}
+        return {key: post[key] for key in ("id", "platform", "url", "preview")} | {"finishAt": finish.isoformat(), "attemptAt": claimed[0]["attempt_at"]}
 
     def record_capture(self, body):
         post_id = body.get("postId")
         if not post_id:
             raise CampaignError("Enter a post ID.")
         now = datetime.now(timezone.utc)
-        match = next(self.worker_posts(now, post_id), None)
+        match = next(self.worker_posts(now, post_id, recording=True), None)
         if not match:
             return False
         post, finish, cadence = match
         attempt = instant(post["last_attempt_at"]) if post["last_attempt_at"] else None
-        if now >= finish or attempt is None or not timedelta(0) <= now - attempt < timedelta(minutes=50):
+        if attempt is None or instant(body.get("attemptAt")) != attempt:
+            return False
+        if now >= finish or not timedelta(0) <= now - attempt < timedelta(minutes=50):
             return False
         metrics = body.get("metrics")
         allowed = {"views", "clicks", "engagements", "likes", "comments", "shares"}
@@ -265,10 +289,10 @@ class CampaignStore:
         if image and not post["preview"]:
             if not isinstance(image, str) or len(image) > 800100 or not re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}", image):
                 raise CampaignError("Invalid screenshot.")
-            changes.update(preview={"kind": "screenshot", "capturedAt": now.isoformat()}, preview_image=image)
+            changes.update(preview={"kind": "screenshot", "capturedAt": attempt.isoformat()}, preview_image=image)
         self.request(f"campaign_posts?id=eq.{post['id']}&removed_at=is.null", "PATCH", changes, "return=minimal")
         self.request("campaign_captures?on_conflict=post_id,capture_day", "POST", {
             "post_id": post["id"], "capture_day": self.local_day(now).isoformat(),
-            "captured_at": now.isoformat(), "cadence": cadence, **metrics,
-        }, "resolution=ignore-duplicates,return=minimal")
+            "captured_at": attempt.isoformat(), "cadence": cadence, **{key: metrics.get(key) for key in allowed},
+        }, "resolution=merge-duplicates,return=minimal")
         return True

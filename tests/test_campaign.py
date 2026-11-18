@@ -90,9 +90,11 @@ class CampaignTests(unittest.TestCase):
         def due(now, previous=first):
             return capture_cadence(datetime.fromisoformat(now), opening, finish, published, previous, sydney_local_day)
 
-        self.assertEqual(due("2026-11-12T08:00:00+11:00", None), "weekly")
+        self.assertIsNone(due("2026-11-12T08:00:00+11:00", None))
+        self.assertEqual(due("2026-11-16T08:00:00+11:00"), "weekly")
+        self.assertIsNone(due("2026-11-17T08:00:00+11:00"))
         self.assertIsNone(due("2026-11-18T21:30:00+11:00"))
-        self.assertEqual(due("2026-11-19T05:30:00+11:00"), "weekly")
+        self.assertIsNone(due("2026-11-19T05:30:00+11:00"))
         self.assertEqual(due("2026-11-23T13:00:00+00:00", first + timedelta(days=11)), "daily")
         self.assertIsNone(due("2026-11-24T21:30:00+11:00", datetime.fromisoformat("2026-11-24T09:00:00+11:00")))
         self.assertEqual(due("2026-12-05T22:29:00+11:00"), "daily")
@@ -125,15 +127,34 @@ class CampaignTests(unittest.TestCase):
             "date_start": (now + timedelta(days=4)).isoformat(), "date_end": (now + timedelta(days=7)).isoformat()}}
         ended = {**common, "id": ended_id, "tracked_events": {
             "date_start": (now - timedelta(days=5)).isoformat(), "date_end": (now - timedelta(hours=4)).isoformat()}}
-        request = Mock(return_value=[{"post_id": active_id}])
+        request = Mock(return_value=[{"post_id": active_id, "attempt_at": now.isoformat()}])
         store = CampaignStore(request, Mock(return_value=[active, ended]), sydney_local_day)
         self.assertEqual(store.worker_queue(), [active_id])
         self.assertEqual(store.claim_capture(active_id)["id"], active_id)
         self.assertTrue(store.record_capture(
-            {"postId": active_id, "status": "Captured", "metrics": {"views": 0}, "image": "data:image/jpeg;base64,YQ=="}))
+            {"postId": active_id, "attemptAt": now.isoformat(), "status": "Captured", "metrics": {"views": 0}, "image": "data:image/jpeg;base64,YQ=="}))
         self.assertEqual(request.call_args_list[1].args[2]["preview_image"], "data:image/jpeg;base64,YQ==")
         self.assertEqual(request.call_args_list[2].args[2]["cadence"], "daily")
         self.assertEqual(request.call_args_list[2].args[2]["views"], 0)
+
+    def test_manual_request_bypasses_same_day_schedule_and_record_rejects_stale_claim(self):
+        now = datetime.now(timezone.utc)
+        post_id = "10000000-0000-0000-0000-000000000001"
+        post = {"id": post_id, "platform": "facebook", "url": "https://www.facebook.com/reel/123",
+                "published_on": now.date().isoformat(), "preview": None,
+                "last_attempt_at": now.isoformat(), "refresh_requested_at": now.isoformat(),
+                "campaign_captures": [{"captured_at": (now - timedelta(minutes=1)).isoformat()}],
+                "tracked_events": {"date_start": (now + timedelta(days=60)).isoformat(),
+                                   "date_end": (now + timedelta(days=61)).isoformat()}}
+        request = Mock(return_value=[{"post_id": post_id}])
+        store = CampaignStore(request, Mock(return_value=[post]), sydney_local_day)
+        self.assertEqual(store.worker_queue(), [post_id])
+        self.assertFalse(store.record_capture({"postId": post_id, "attemptAt": (now-timedelta(minutes=5)).isoformat()}))
+        request.assert_not_called()
+        store.request_refresh({"id": "show", "date_end": (now+timedelta(days=3)).isoformat()})
+        request.assert_called_once_with("rpc/request_campaign_refresh", "POST", {"show_id": "show"})
+        with self.assertRaises(CampaignError):
+            store.request_refresh({"id": "ended", "date_end": (now-timedelta(days=1)).isoformat()})
 
     def test_campaign_data_requires_key_and_snapshots_fail_closed(self):
         handler = Handler.__new__(Handler)

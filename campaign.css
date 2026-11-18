@@ -61,3 +61,5 @@
   .campaign-url, .campaign-unlock label, .campaign-post-notes { grid-column: 1 / -1; }
   .campaign-post-form > button { justify-self: start; }
 }
+
+.campaign-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }

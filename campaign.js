@@ -24,6 +24,8 @@
   let editedPost = null;
   let editTrigger = null;
   let removedPost = null;
+  const fetchButton = $("#campaign-fetch");
+  let refreshPoll;
   editForm.elements.postType.replaceChildren(...[...postForm.elements.postType.options].map(option => option.cloneNode(true)));
 
   function setStatus(message = "", error = false) {
@@ -58,6 +60,8 @@
     if (eventUrl === event.detail.url) return;
     eventUrl = event.detail.url;
     campaignFinish = null;
+    clearTimeout(refreshPoll);
+    fetchButton.hidden = true;
     ++generation;
     editor.hidden = true;
     editedPost = null;
@@ -137,6 +141,18 @@
 
     $("#campaign-empty").hidden = data.posts.length > 0;
     $("#campaign-table-wrap").hidden = data.posts.length === 0;
+    const pending = data.posts.some(post => post.refresh_requested_at &&
+      (!post.campaign_captures?.[0]?.captured_at || new Date(post.refresh_requested_at) > new Date(post.campaign_captures[0].captured_at)));
+    fetchButton.hidden = false;
+    fetchButton.disabled = !data.posts.length || !campaignFinish || campaignFinish <= new Date() || pending;
+    fetchButton.textContent = pending ? "Fetching metrics…" : "Fetch metrics";
+    clearTimeout(refreshPoll);
+    if (pending) {
+      const currentShow = eventUrl;
+      refreshPoll = setTimeout(() => {
+        if (eventUrl === currentShow && !pane.hidden) load("Metrics refresh is queued. The worker may take a few minutes.");
+      }, 30000);
+    }
     $("#campaign-posts").replaceChildren(...data.posts.map(post => {
       const capture = post.campaign_captures?.[0] || {};
       const button = document.createElement("button");
@@ -176,6 +192,21 @@
       return rowWith([postCell, datePosted(post.published_on), metric(capture.views), metric(capture.clicks), metric(capture.engagements), last, actions]);
     }));
   }
+
+  fetchButton.addEventListener("click", async () => {
+    const operation = generation;
+    fetchButton.disabled = true;
+    setStatus("Requesting fresh metrics for this show…");
+    try {
+      await request({ body: { action: "refresh" } });
+      if (operation === generation) await load("Refresh queued for all posts. Results will update here when the worker finishes.");
+    } catch (error) {
+      if (operation === generation) {
+        setStatus(error.message, true);
+        fetchButton.disabled = false;
+      }
+    }
+  });
 
   async function load(successMessage = "") {
     const operation = ++generation;

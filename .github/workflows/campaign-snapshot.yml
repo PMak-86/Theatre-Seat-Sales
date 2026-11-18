@@ -3,7 +3,7 @@ name: Campaign engagement snapshots
 on:
   workflow_dispatch:
   schedule:
-    - cron: '17 * * * *'
+    - cron: '*/5 * * * *'
 
 permissions:
   contents: read
@@ -22,11 +22,19 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
+      - name: Check for requested or scheduled captures
+        id: queue
+        env:
+          RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
+          SNAPSHOT_SECRET: ${{ secrets.SNAPSHOT_SECRET }}
+        run: echo "due=$(python campaign_worker.py --check)" >> "$GITHUB_OUTPUT"
       - name: Install Chromium
+        if: steps.queue.outputs.due == 'true'
         run: |
           python -m pip install -r requirements-campaign.txt
           python -m playwright install --with-deps chromium --only-shell
       - name: Capture due campaign snapshots
+        if: steps.queue.outputs.due == 'true'
         env:
           RENDER_APP_URL: ${{ secrets.RENDER_APP_URL }}
           SNAPSHOT_SECRET: ${{ secrets.SNAPSHOT_SECRET }}
