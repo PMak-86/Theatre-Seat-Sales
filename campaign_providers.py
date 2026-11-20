@@ -232,7 +232,8 @@ class PublicPosts:
                 target = self.open_post(page, platform, player, '[class*="EmbedPlayerContainer"]') or target
 
         canonical = page.url
-        image = self.screenshot(page, target) if target and not post["preview"] else None
+        capture_target = self.post_capture_target(platform, target) if target else None
+        image = self.screenshot(page, capture_target) if capture_target and not post["preview"] else None
         if platform == "facebook" and not post["preview"] and "/plugins/" not in urlsplit(canonical).path:
             public_embed = embed_url("facebook", canonical)
             if public_embed != canonical:
@@ -291,6 +292,21 @@ class PublicPosts:
                 (media.tagName === 'VIDEO' || media.complete && media.naturalWidth >= 140);
         })""")
 
+    def post_capture_target(self, platform, target):
+        if platform != "facebook":
+            return target
+        # Facebook may identify only its caption with data-ad-preview. Include
+        # the nearest post container holding the photo or video as well.
+        candidate = target
+        for _ in range(8):
+            if self.has_post_media(candidate):
+                return candidate
+            parent = candidate.locator("..")
+            if not parent.count() or parent.evaluate("element => element.tagName === 'BODY'"):
+                break
+            candidate = parent
+        return target
+
     def screenshot(self, page, target):
         try:
             self.dismiss_login_prompt(page)
@@ -300,6 +316,10 @@ class PublicPosts:
             box = target.bounding_box()
             if not box or box["width"] < 100 or box["height"] < 80:
                 return None
+            if box["height"] > page.viewport_size["height"]:
+                page.set_viewport_size({"width": 600, "height": min(1600, int(box["height"]) + 32)})
+                target.scroll_into_view_if_needed()
+                box = target.bounding_box()
             # Refuse a capture if an unrelated dialog covers the post.
             blocked = target.evaluate("""element => {
                 const r = element.getBoundingClientRect();
