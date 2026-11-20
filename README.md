@@ -73,6 +73,8 @@ Views, clicks and engagement stay blank when the platform does not show them pub
 3. Publish the dashboard and `.github/workflows/campaign-snapshot.yml` using the existing `RENDER_APP_URL` and `SNAPSHOT_SECRET` repository secrets. Chromium runs on GitHub Actions, so the Render build and environment need no browser changes.
 4. Run **Campaign engagement snapshots** after logging a public post for an active show, then check its screenshot and public counts in the tab.
 
+Facebook embed checks read the numeric Like, Comment and Share controls even when a screenshot is already saved. TikTok photo posts use the public detail route for the same post ID; unrelated post metrics are rejected. Public counts can differ between the platform preview and its main page.
+
 For a local worker, install `requirements-campaign.txt` and run `python -m playwright install chromium --only-shell`. Set `CAMPAIGN_CHROMIUM_CHANNEL=chrome` to use an installed Chrome for local verification.
 
 

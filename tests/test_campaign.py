@@ -5,7 +5,7 @@ from datetime import date, datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from campaign import CampaignError, CampaignStore, capture_cadence, post_url
-from campaign_providers import allow_request, tiktok_metrics, visible_metrics
+from campaign_providers import PublicPosts, allow_request, embed_url, tiktok_metrics, visible_metrics
 from server import Handler, sydney_local_day
 
 
@@ -107,6 +107,26 @@ class CampaignTests(unittest.TestCase):
                          {"clicks": 12, "likes": 1200, "comments": 2, "shares": 4, "engagements": 1206})
         self.assertEqual(visible_metrics(["5 views", "9 views", "4 comments", "5 replies"]), {"comments": 4})
         self.assertEqual(visible_metrics(["Like, 39 reactions", "Comment, 1 comment", "Share, 18 shares"])["engagements"], 58)
+
+    def test_saved_facebook_preview_still_reads_embed_metrics(self):
+        provider = PublicPosts()
+        page = Mock(url="https://www.facebook.com/gosfordms/posts/123")
+        direct, embed = Mock(), Mock()
+        provider.open_post = Mock(side_effect=[direct, embed])
+        provider.labels = Mock(side_effect=[[], ["Like 23", "Comment 3", "Share 12"]])
+        provider.has_post_media = Mock(return_value=True)
+        provider.post_capture_target = Mock(return_value=direct)
+        provider.screenshot = Mock()
+        result = provider.read_post(page, {"platform": "facebook",
+            "url": "https://www.facebook.com/share/p/abc", "preview": {"version": 2}})
+        self.assertEqual(result.metrics, {"likes": 23, "comments": 3, "shares": 12, "engagements": 38})
+        provider.screenshot.assert_not_called()
+
+    def test_tiktok_photo_uses_public_detail_page_for_same_post(self):
+        self.assertEqual(embed_url("tiktok", "https://www.tiktok.com/@show/photo/123"),
+                         "https://www.tiktok.com/@show/video/123")
+        self.assertEqual(embed_url("tiktok", "https://www.tiktok.com/@show/video/123"),
+                         "https://www.tiktok.com/@show/video/123")
 
     def test_tiktok_counts_are_scoped_to_requested_post(self):
         fixture = json.dumps({"__DEFAULT_SCOPE__": {"webapp.video-detail": {

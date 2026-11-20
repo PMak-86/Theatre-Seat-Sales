@@ -110,6 +110,10 @@ def embed_url(platform, url):
             return f"https://www.facebook.com/plugins/{plugin}?href={quote(url, safe='')}&width=500&show_text=true"
     if platform == "instagram" and not urlsplit(url).path.startswith("/stories/"):
         return url.rstrip("/") + "/embed/captioned/"
+    if platform == "tiktok":
+        # Photo URLs omit server-rendered stats; the public video detail route
+        # serves the same photo post. tiktok_metrics verifies its exact ID.
+        return re.sub(r"(/@[^/]+/)photo/(\d+)(?=/|[?#]|$)", r"\1video/\2", url, count=1)
     return url
 
 
@@ -212,7 +216,8 @@ class PublicPosts:
         platform = post["platform"]
         url = post["url"]
         embed = embed_url(platform, url)
-        target = self.open_post(page, platform, embed, POST_LOCATORS[platform])
+        selector = "body" if platform == "facebook" and "/plugins/" in urlsplit(embed).path else POST_LOCATORS[platform]
+        target = self.open_post(page, platform, embed, selector)
         if not target and embed != url:
             target = self.open_post(page, platform, url, POST_LOCATORS[platform])
 
@@ -234,13 +239,14 @@ class PublicPosts:
         canonical = page.url
         capture_target = self.post_capture_target(platform, target) if target else None
         image = self.screenshot(page, capture_target) if capture_target and not post["preview"] else None
-        if platform == "facebook" and not post["preview"] and "/plugins/" not in urlsplit(canonical).path:
+        if platform == "facebook" and "/plugins/" not in urlsplit(canonical).path:
             public_embed = embed_url("facebook", canonical)
             if public_embed != canonical:
                 embedded = self.open_post(page, platform, public_embed, "body")
-                if embedded and self.has_post_media(embedded):
-                    image = self.screenshot(page, embedded) or image
+                if embedded:
                     metrics.update(visible_metrics(self.labels(embedded)))
+                    if not post["preview"] and self.has_post_media(embedded):
+                        image = self.screenshot(page, embedded) or image
         preview = {"kind": "screenshot", "version": 2} if image else None
         # The official Facebook embed sometimes shows the media but omits the
         # reel's public reaction, comment and share buttons.
@@ -270,7 +276,13 @@ class PublicPosts:
             return [
             ...lines, ...adjacent,
             ...Array.from(element.querySelectorAll('[aria-label], [title]')).flatMap(
-                node => [node.getAttribute('aria-label'), node.getAttribute('title')].filter(Boolean))
+                node => {
+                    const title = node.getAttribute('title');
+                    // Official Facebook embeds render bare counts beside titled icons.
+                    const countLabel = /^(?:like|comment|share)$/i.test(title || '')
+                        ? title + ' ' + node.innerText.trim() : null;
+                    return [node.getAttribute('aria-label'), title, countLabel].filter(Boolean);
+                })
         ].slice(0, 300);
         }""")
 
