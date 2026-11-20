@@ -28,7 +28,7 @@ POST_LOCATORS = {
 METRIC_NAMES = {
     "views": r"views?|plays?",
     "clicks": r"link clicks?|post clicks?",
-    "likes": r"likes?|reactions?",
+    "likes": r"(?:all\s+)?(?:likes?|reactions?)",
     "comments": r"comments?",
     "shares": r"shares?",
     "engagements": r"engagements?|interactions?",
@@ -167,6 +167,8 @@ class PublicPosts:
 
     def observe(self, post):
         self.start()
+        if post["platform"] == "facebook" and (post.get("preview") or {}).get("version", 0) < 2:
+            post = {**post, "preview": None}
         platform = post["platform"]
         context = self.browser.new_context(viewport={"width": 600, "height": 780}, service_workers="block")
         page = context.new_page()
@@ -196,8 +198,10 @@ class PublicPosts:
             response = page.goto(url, wait_until="domcontentloaded", timeout=12000)
             if not response or response.status >= 400 or not allow_request(platform, page.url, True):
                 return None
+            self.dismiss_login_prompt(page)
             target = page.locator(selector).filter(visible=True).first
             target.wait_for(state="visible")
+            self.dismiss_login_prompt(page)
             if not LOCKED.search(target.inner_text()[:2000]):
                 return target
         except self.browser_error:
@@ -227,8 +231,16 @@ class PublicPosts:
                 player = f"https://www.tiktok.com/player/v1/{video[1]}?controls=0&description=1"
                 target = self.open_post(page, platform, player, '[class*="EmbedPlayerContainer"]') or target
 
+        canonical = page.url
         image = self.screenshot(page, target) if target and not post["preview"] else None
-        preview = {"kind": "screenshot"} if image else None
+        if platform == "facebook" and not post["preview"] and "/plugins/" not in urlsplit(canonical).path:
+            public_embed = embed_url("facebook", canonical)
+            if public_embed != canonical:
+                embedded = self.open_post(page, platform, public_embed, "body")
+                if embedded and self.has_post_media(embedded):
+                    image = self.screenshot(page, embedded) or image
+                    metrics.update(visible_metrics(self.labels(embedded)))
+        preview = {"kind": "screenshot", "version": 2} if image else None
         # The official Facebook embed sometimes shows the media but omits the
         # reel's public reaction, comment and share buttons.
         if platform == "facebook" and "/plugins/" in urlsplit(page.url).path and "engagements" not in metrics:
@@ -236,7 +248,9 @@ class PublicPosts:
             if direct:
                 metrics.update(visible_metrics(self.labels(self.metric_scope(page, platform, direct))))
         status = "Public metrics captured." if metrics else "The platform showed no public views, clicks or total engagement."
-        if not target and not metrics:
+        if not image and not post["preview"]:
+            status += " A clear public screenshot was unavailable; it will be retried."
+        if not target and not metrics and not image:
             status = "A public preview was unavailable or the platform required sign-in."
         return Observation(metrics, status, preview, image)
 
@@ -247,17 +261,55 @@ class PublicPosts:
         return target
 
     def labels(self, target):
-        return target.evaluate(r"""element => [
-            ...element.innerText.split(/\n+/),
+        return target.evaluate(r"""element => {
+            const lines = element.innerText.split(/\n+/).map(line => line.trim());
+            const adjacent = lines.flatMap((line, index) =>
+                /^(?:all\s+)?(?:reactions?|likes?|shares?|comments?|views?)\s*:?$/i.test(line)
+                    ? [line + " " + (lines[index + 1] || "")] : []);
+            return [
+            ...lines, ...adjacent,
             ...Array.from(element.querySelectorAll('[aria-label], [title]')).flatMap(
                 node => [node.getAttribute('aria-label'), node.getAttribute('title')].filter(Boolean))
-        ].slice(0, 300)""")
+        ].slice(0, 300);
+        }""")
+
+    def dismiss_login_prompt(self, page):
+        """Use the platform's own dismiss control when a public post is obscured."""
+        dialogs = page.get_by_role("dialog").filter(visible=True)
+        for dialog in dialogs.all():
+            if not dialog.locator('input[type="password"], input[name="email"]').count():
+                continue
+            close = dialog.get_by_role("button", name=re.compile(r"^close$", re.I))
+            if close.count() and close.first.is_visible():
+                close.first.click(timeout=2000)
+                dialog.wait_for(state="hidden", timeout=2000)
+
+    def has_post_media(self, target):
+        return target.evaluate("""element => Array.from(element.querySelectorAll('video, img')).some(media => {
+            const box = media.getBoundingClientRect();
+            return box.width >= 140 && box.height >= 100 &&
+                (media.tagName === 'VIDEO' || media.complete && media.naturalWidth >= 140);
+        })""")
 
     def screenshot(self, page, target):
         try:
+            self.dismiss_login_prompt(page)
+            if page.locator('input[type="password"]:visible, input[name="email"]:visible').count():
+                return None
             target.scroll_into_view_if_needed()
             box = target.bounding_box()
             if not box or box["width"] < 100 or box["height"] < 80:
+                return None
+            # Refuse a capture if an unrelated dialog covers the post.
+            blocked = target.evaluate("""element => {
+                const r = element.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                    Math.max(1, Math.min(innerWidth-1, r.x+r.width/2)),
+                    Math.max(1, Math.min(innerHeight-1, r.y+Math.min(r.height/2, innerHeight/2))));
+                return !!hit && !!hit.closest('[role="dialog"]') &&
+                    !element.contains(hit) && !hit.contains(element);
+            }""")
+            if blocked:
                 return None
             # Clip to the visible post rather than saving recommendation panels.
             viewport = page.viewport_size

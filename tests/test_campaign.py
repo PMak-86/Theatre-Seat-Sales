@@ -137,6 +137,22 @@ class CampaignTests(unittest.TestCase):
         self.assertEqual(request.call_args_list[2].args[2]["cadence"], "daily")
         self.assertEqual(request.call_args_list[2].args[2]["views"], 0)
 
+    def test_legacy_facebook_preview_is_replaced_by_a_clear_capture(self):
+        now = datetime.now(timezone.utc)
+        post_id = "10000000-0000-0000-0000-000000000001"
+        post = {"id": post_id, "platform": "facebook", "url": "https://www.facebook.com/reel/123",
+                "published_on": now.date().isoformat(), "preview": {"kind": "screenshot"},
+                "last_attempt_at": now.isoformat(), "campaign_captures": [],
+                "tracked_events": {"date_start": (now+timedelta(days=3)).isoformat(),
+                                   "date_end": (now+timedelta(days=4)).isoformat()}}
+        request = Mock()
+        store = CampaignStore(request, Mock(return_value=[post]), sydney_local_day)
+        self.assertTrue(store.record_capture({
+            "postId": post_id, "attemptAt": now.isoformat(), "metrics": {},
+            "status": "Public preview captured", "image": "data:image/jpeg;base64,YQ=="}))
+        self.assertEqual(request.call_args_list[0].args[2]["preview"]["version"], 2)
+        self.assertEqual(request.call_args_list[0].args[2]["preview_image"], "data:image/jpeg;base64,YQ==")
+
     def test_manual_request_bypasses_same_day_schedule_and_record_rejects_stale_claim(self):
         now = datetime.now(timezone.utc)
         post_id = "10000000-0000-0000-0000-000000000001"

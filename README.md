@@ -86,3 +86,6 @@ Apply `supabase-campaign-entry-edit.sql` after the campaign-log migration. Each 
 Apply `supabase-campaign-manual-refresh.sql` after the campaign entry-edit migration. Fetch metrics requests a fresh check for all active posts in the loaded show, including posts checked earlier the same day. The button shows a pending state while the worker processes the request. The latest result replaces the day's prior result. Requests stop three hours after the final performance starts.
 
 Automatic checks run on Mondays from 8 am Sydney time until the final week before opening, then daily from 8 am. The workflow polls the queue every five minutes and installs Chromium only when work is due. GitHub schedule delays can postpone a check.
+
+
+Campaign post rows expand in place for notes, previews and metric history. The main table shows views and combined available engagements. A reported engagement total is used instead of summing its component reactions, comments and shares again, then available clicks are added. When no total is exposed, available reaction/like, comment and share counts are summed. Blank counts stay unavailable. Facebook previews captured by the earlier worker are replaced by the next successful clear screenshot.

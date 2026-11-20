@@ -5,6 +5,16 @@
   const postForm = $("#campaign-post-form");
   const notesForm = $("#campaign-notes-form");
   const notesStatus = $("#campaign-notes-status");
+  const report = $("#campaign-report");
+  const detailRow = document.createElement("tr");
+  detailRow.className = "campaign-detail-row";
+  detailRow.hidden = true;
+  const detailCell = detailRow.insertCell();
+  detailCell.colSpan = 6;
+  const detailContent = document.createElement("div");
+  detailContent.className = "campaign-inline-content";
+  detailCell.append(detailContent);
+  let expandedButton = null;
   const scheduleText = $("#campaign-schedule-summary");
   const pane = $("#campaign-pane");
   const status = $("#campaign-status");
@@ -119,6 +129,33 @@
     return day.format(new Date(value + "T00:00:00Z"));
   }
 
+  function engagementTotal(capture) {
+    const components = [capture.likes, capture.comments, capture.shares].filter(value => value != null);
+    const interactions = capture.engagements ?? (components.length ? components.reduce((sum, value) => sum + value, 0) : null);
+    const counts = [interactions, capture.clicks].filter(value => value != null);
+    return counts.length ? counts.reduce((sum, value) => sum + value, 0) : null;
+  }
+
+  function closeDetail() {
+    detailController?.abort();
+    expandedButton?.setAttribute("aria-expanded", "false");
+    expandedButton?.setAttribute("aria-pressed", "false");
+    expandedButton = null;
+    detailRow.hidden = true;
+    report.hidden = true;
+    editor.hidden = true;
+  }
+
+  function openDetail(button) {
+    closeDetail();
+    expandedButton = button;
+    button.setAttribute("aria-expanded", "true");
+    if (button.hasAttribute("aria-pressed")) button.setAttribute("aria-pressed", "true");
+    detailContent.append(editor, report);
+    button.closest("tr").after(detailRow);
+    detailRow.hidden = false;
+  }
+
   function postName(post) {
     const kind = post.post_type;
     return `${platforms[post.platform]} ${kind}`;
@@ -150,9 +187,13 @@
     if (pending) {
       const currentShow = eventUrl;
       refreshPoll = setTimeout(() => {
-        if (eventUrl === currentShow && !pane.hidden) load("Metrics refresh is queued. The worker may take a few minutes.");
+        if (eventUrl === currentShow && !pane.hidden && detailRow.hidden) load("Metrics refresh is queued. The worker may take a few minutes.");
       }, 30000);
     }
+    // Park the shared panels before replacing rows so their forms and listeners survive.
+    closeDetail();
+    $("#campaign-content").append(editor, report);
+    detailRow.remove();
     $("#campaign-posts").replaceChildren(...data.posts.map(post => {
       const capture = post.campaign_captures?.[0] || {};
       const button = document.createElement("button");
@@ -161,6 +202,7 @@
       button.textContent = postName(post);
       button.setAttribute("aria-pressed", "false");
       button.setAttribute("aria-controls", "campaign-report");
+      button.setAttribute("aria-expanded", "false");
       button.addEventListener("click", () => readPost(post, button));
       const link = document.createElement("a");
       link.href = post.url;
@@ -182,6 +224,8 @@
       edit.type = "button";
       edit.className = "text-button";
       edit.textContent = "Edit";
+      edit.setAttribute("aria-controls", "campaign-editor");
+      edit.setAttribute("aria-expanded", "false");
       edit.addEventListener("click", () => editPost(post, edit));
       const remove = document.createElement("button");
       remove.type = "button";
@@ -189,7 +233,15 @@
       remove.textContent = "Remove";
       remove.addEventListener("click", () => removePost(post, remove));
       actions.append(edit, remove);
-      return rowWith([postCell, datePosted(post.published_on), metric(capture.views), metric(capture.clicks), metric(capture.engagements), last, actions]);
+      const total = document.createElement("span");
+      total.textContent = metric(engagementTotal(capture));
+      total.title = "Available engagement counts plus clicks. A reported engagement total already includes its component interactions.";
+      const row = rowWith([postCell, datePosted(post.published_on), metric(capture.views), total, last, actions]);
+      row.className = "campaign-post-row";
+      row.addEventListener("click", event => {
+        if (!event.target.closest("a, button, input, textarea, select")) readPost(post, button);
+      });
+      return row;
     }));
   }
 
@@ -210,10 +262,8 @@
 
   async function load(successMessage = "") {
     const operation = ++generation;
-    $("#campaign-report").hidden = true;
-    editor.hidden = true;
+    closeDetail();
     editedPost = null;
-    detailController?.abort();
     setStatus("Loading campaign…");
     try {
       const data = await request();
@@ -259,13 +309,16 @@
   });
 
   async function readPost(post, button) {
-    detailController?.abort();
+    if (expandedButton === button && !report.hidden) {
+      closeDetail();
+      return;
+    }
+    openDetail(button);
     const controller = new AbortController();
     detailController = controller;
     for (const choice of $("#campaign-posts").querySelectorAll("[aria-pressed]")) {
       choice.setAttribute("aria-pressed", String(choice === button));
     }
-    const report = $("#campaign-report");
     const preview = $("#campaign-preview");
     const message = $("#campaign-report-status");
     $("#campaign-report-title").textContent = `${postName(post)} snapshot history`;
@@ -280,13 +333,18 @@
       if (controller.signal.aborted) return;
       const saved = data.post;
       enableNotes(saved, button, controller.signal);
-      if (saved.preview?.kind === "screenshot" && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(saved.preview_image || "")) {
+      if (saved.preview?.kind === "screenshot" && (saved.platform !== "facebook" || saved.preview.version >= 2) && /^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(saved.preview_image || "")) {
         const image = document.createElement("img");
         image.src = saved.preview_image;
         image.alt = `Saved screenshot of the ${postName(saved)}`;
         const stamp = document.createElement("p");
         stamp.textContent = `Post screenshot captured ${dateTime.format(new Date(saved.preview.capturedAt))} Sydney time.`;
         preview.append(image, stamp);
+      }
+      if (saved.platform === "facebook" && saved.preview && !(saved.preview.version >= 2)) {
+        const notice = document.createElement("p");
+        notice.textContent = "Fetch metrics to replace this post’s earlier preview.";
+        preview.append(notice);
       }
       const captureStatus = saved.capture_status || "The first public snapshot has not been recorded yet.";
       message.textContent = `${captureStatus} A dash means the figure was unavailable. Counts shown in abbreviated form by the platform are approximate.`;
@@ -302,8 +360,7 @@
   }
 
   function editPost(post, trigger) {
-    detailController?.abort();
-    $("#campaign-report").hidden = true;
+    openDetail(trigger);
     editedPost = post.id;
     editTrigger = trigger;
     $("#campaign-edit-post").textContent = `${postName(post)} · ${post.url}`;
@@ -317,7 +374,7 @@
   }
 
   $("#campaign-edit-cancel").addEventListener("click", () => {
-    editor.hidden = true;
+    closeDetail();
     editedPost = null;
     editTrigger?.focus();
   });

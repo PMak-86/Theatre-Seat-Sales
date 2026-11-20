@@ -286,10 +286,11 @@ class CampaignStore:
             raise CampaignError("Invalid capture status.")
         changes = {"capture_status": status}
         image = body.get("image")
-        if image and not post["preview"]:
+        replace_preview = not post["preview"] or (post["platform"] == "facebook" and post["preview"].get("version", 0) < 2)
+        if image and replace_preview:
             if not isinstance(image, str) or len(image) > 800100 or not re.fullmatch(r"data:image/jpeg;base64,[A-Za-z0-9+/]+={0,2}", image):
                 raise CampaignError("Invalid screenshot.")
-            changes.update(preview={"kind": "screenshot", "capturedAt": attempt.isoformat()}, preview_image=image)
+            changes.update(preview={"kind": "screenshot", "version": 2, "capturedAt": attempt.isoformat()}, preview_image=image)
         self.request(f"campaign_posts?id=eq.{post['id']}&removed_at=is.null", "PATCH", changes, "return=minimal")
         self.request("campaign_captures?on_conflict=post_id,capture_day", "POST", {
             "post_id": post["id"], "capture_day": self.local_day(now).isoformat(),
